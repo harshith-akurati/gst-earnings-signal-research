@@ -268,7 +268,19 @@ def build_events():
             try:
                 idx = json.loads(get(f"{base}/index.json", UA, f"ix_{e['accession']}.json"))
                 names = [it["name"] for it in idx["directory"]["item"]]
-                cands = [n for n in names if re.search(r"ex.?99", n, re.I) and n.lower().endswith((".htm", ".html", ".txt"))]
+                # Earnings-release exhibits are named inconsistently across filers
+                # (ex99_1.htm, exhibit9919302025.htm, q2fy26exhibit991er.htm,
+                # googexhibit991q32025.htm). Match any document carrying a 99-1
+                # exhibit marker, excluding EDGAR index and rendered R-files.
+                def _is_ex99(n):
+                    ln = n.lower()
+                    if not ln.endswith((".htm", ".html", ".txt")):
+                        return False
+                    if "index" in ln or re.match(r"^r\d+\.htm", ln) or re.match(r"^\d{10}-\d\d-\d{6}", ln):
+                        return False
+                    return bool(re.search(r"99[-_.]?1", ln) or re.search(r"ex[-_]?99", ln))
+                cands = [n for n in names if _is_ex99(n)]
+                cands.sort(key=lambda n: (0 if re.search(r"99[-_.]?1", n.lower()) else 1, len(n), n))
                 if cands:
                     doc_url = f"{base}/{sorted(cands)[0]}"
                     raw = get(doc_url, UA, f"ex_{e['accession']}_{sorted(cands)[0][:40]}")
