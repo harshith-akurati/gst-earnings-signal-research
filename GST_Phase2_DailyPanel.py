@@ -188,6 +188,8 @@
 from __future__ import annotations
 from pathlib import Path
 from datetime import datetime, timezone, date, timedelta
+import hashlib
+import importlib.metadata
 import json
 import os
 import random
@@ -379,6 +381,72 @@ def _bounded_leg(fn, timeout_s: float, ticker: str, leg: str, *args, **kwargs):
     return run_bounded(_wrapped, timeout_s)
 
 
+# --- RAW TRENDS RESPONSE ARCHIVE -- archives the pytrends DataFrame exactly
+# as returned, before fetch_ticker_series_scoped_backoff() reshapes it into
+# the Week/gst/isPartial frame that function returns. Trends rescales its
+# output on every query, so a response not saved at capture time can never
+# be reconstructed later -- this exists so a future rescale doesn't silently
+# take the underlying evidence with it. Purely additive: does not change
+# fetch_ticker_series_scoped_backoff()'s return value or any other logic in
+# it, and a write failure here is logged and swallowed, never raised into
+# the capture (an archive-write failure is not an observation failure). ---
+TRENDS_ARCHIVE_DIR = OUT_DIR / "GST_Trends_Raw_Capture"
+
+
+def _archive_raw_trends_frame(ticker: str, attempt: int, df: pd.DataFrame | None, query_params: dict) -> None:
+    """Archives THIS attempt's raw pytrends response -- successful, empty, or
+    malformed -- before fetch_ticker_series_scoped_backoff() decides whether
+    to raise and retry on it. Every attempt gets its own file (deterministic
+    filename: run_date + ticker + attempt number), so a failed or empty
+    attempt is preserved as evidence, not just the eventual success -- Trends
+    rescales its output on every query, so an attempt not saved now can never
+    be reconstructed later, whether or not it happened to succeed.
+
+    Writes ticker, attempt number, a UTC ms-precision retrieval timestamp,
+    the exact pytrends payload params used, the pytrends client version, a
+    frame_status ("ok" / "empty_or_malformed" / "none" for a bare None
+    return), and -- when a frame object exists at all -- its CSV
+    serialization plus a SHA-256 of that CSV. An existing file for the same
+    (run_date, ticker, attempt) is left untouched, never overwritten --
+    consistent with this repo's other raw-evidence stores (see
+    gst_market_response/raw_bars.py). Never raises: any failure is logged
+    via log() and swallowed so the capture continues."""
+    try:
+        TRENDS_ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
+        target_path = TRENDS_ARCHIVE_DIR / f"{RUN_DATE.isoformat()}_{ticker}_attempt{attempt:02d}.json"
+        if target_path.exists():
+            log(f"    [{ticker}] [ARCHIVE WARNING] {target_path.name} already exists -- "
+                f"not overwriting an existing archive entry")
+            return
+        if df is None:
+            frame_status, frame_csv, frame_sha256 = "none", None, None
+        else:
+            frame_status = "ok" if (not df.empty and ticker in df.columns) else "empty_or_malformed"
+            frame_csv = df.to_csv()
+            frame_sha256 = hashlib.sha256(frame_csv.encode("utf-8")).hexdigest()
+        try:
+            pytrends_version = importlib.metadata.version("pytrends")
+        except importlib.metadata.PackageNotFoundError:
+            pytrends_version = "unknown"
+        envelope = {
+            "ticker": ticker,
+            "attempt": attempt,
+            "retrieved_at_utc": datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
+            "query_params": query_params,
+            "pytrends_version": pytrends_version,
+            "frame_status": frame_status,
+            "frame_sha256": frame_sha256,
+            "frame_csv": frame_csv,
+        }
+        tmp_path = target_path.with_name(target_path.name + ".tmp")
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(envelope, f)
+        os.replace(tmp_path, target_path)
+    except Exception as e:
+        log(f"    [{ticker}] [ARCHIVE WARNING] failed to archive raw Trends response "
+            f"(attempt {attempt}): {e!r} (capture continues)")
+
+
 def fetch_ticker_series_scoped_backoff(pt: TrendReq, term: str) -> tuple[pd.DataFrame, dict]:
     """Same pytrends query/reshape as GST_Live_Signal_Engine.fetch_ticker_series() --
     only the 429 retry schedule differs. See "SCOPED 429-BACKOFF FIX" in the
@@ -397,9 +465,13 @@ def fetch_ticker_series_scoped_backoff(pt: TrendReq, term: str) -> tuple[pd.Data
     attempts_used = 0
     budget_exhausted = False
 
-    def _do_request():
+    def _do_request(attempt):
         pt.build_payload([term], timeframe=timeframe, geo=GST_GEO, gprop=GST_GPROP, cat=GST_CATEGORY)
         df = pt.interest_over_time()
+        _archive_raw_trends_frame(term, attempt, df, {
+            "kw_list": [term], "timeframe": timeframe,
+            "geo": GST_GEO, "gprop": GST_GPROP, "cat": GST_CATEGORY,
+        })
         if df is None or df.empty or term not in df.columns:
             raise RuntimeError("Empty result or missing term column")
         return pd.DataFrame({
@@ -420,7 +492,7 @@ def fetch_ticker_series_scoped_backoff(pt: TrendReq, term: str) -> tuple[pd.Data
         # TrendReq's own timeout=(30,60) does -- verified via the injected
         # slow-call test, not assumed. leg="gst" is what the SAFEGUARD TEST
         # HOOK matches on for this leg.
-        out, timed_out, elapsed, err = _bounded_leg(_do_request, GST_ATTEMPT_TIMEOUT_S, term, "gst")
+        out, timed_out, elapsed, err = _bounded_leg(_do_request, GST_ATTEMPT_TIMEOUT_S, term, "gst", attempt)
         if not timed_out and err is None:
             return out, {
                 "attempts": attempts_used, "rate_limit_events": rate_limit_events,
