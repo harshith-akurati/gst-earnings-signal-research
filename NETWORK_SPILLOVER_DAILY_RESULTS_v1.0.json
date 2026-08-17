@@ -1,0 +1,294 @@
+{
+ "artifact": "NETWORK_SPILLOVER_DAILY_RESULTS",
+ "version": "1.0",
+ "status": "EXPLORATORY_RETROSPECTIVE_NETWORK_DEVELOPMENT_ONLY",
+ "touches_hyp01_or_prospective_state": false,
+ "executable_because": "the anchor's benchmark-adjusted return through close(T) is known after that close; neighbors are entered at open(T+1). Neighbor open(T) is never used as an entry.",
+ "design": {
+  "anchors": [
+   "NVDA",
+   "AMD",
+   "INTC"
+  ],
+  "neighbors": [
+   "TSM",
+   "ASML",
+   "AMAT",
+   "LRCX",
+   "AVGO",
+   "ANET",
+   "DELL",
+   "SMCI",
+   "MSFT",
+   "AMZN",
+   "GOOGL",
+   "META"
+  ],
+  "benchmark": "SMH",
+  "sensitivity_benchmark": "SPY",
+  "exits": [
+   "close_T1",
+   "close_T3"
+  ],
+  "cost_bps_round_trip": 10.0,
+  "event_session_rule": "SEC 8-K item 2.02 acceptance time; after 16:00 ET -> next session, before 09:30 ET -> that session",
+  "gst_feature": "strictly pre-event z from weeks closing before the event day",
+  "gst_high_threshold_z": 1.0,
+  "overlapping_spike_classification_used": false,
+  "primary_observation": "anchor event, not neighbor row"
+ },
+ "sample": {
+  "sec_earnings_filings": 63,
+  "usable_anchor_events": 63,
+  "dropped": 0,
+  "drop_reasons": {},
+  "neighbor_rows_descriptive": 1512,
+  "date_range": [
+   "2021-01-15",
+   "2025-11-20"
+  ],
+  "by_anchor": {
+   "INTC": 21,
+   "AMD": 21,
+   "NVDA": 21
+  }
+ },
+ "primary_exit": "close_T1",
+ "results": {
+  "close_T1": {
+   "gross": {
+    "n": 63,
+    "mean_pct": -0.104,
+    "median_pct": -0.0546,
+    "ci95_pct": [
+     -0.238,
+     0.03
+    ],
+    "t_stat": -1.521,
+    "hit_rate_pct": 44.44
+   },
+   "net": {
+    "n": 63,
+    "mean_pct": -0.204,
+    "median_pct": -0.1546,
+    "ci95_pct": [
+     -0.338,
+     -0.07
+    ],
+    "t_stat": -2.984,
+    "hit_rate_pct": 34.92
+   },
+   "spy_sensitivity_gross": {
+    "n": 63,
+    "mean_pct": -0.2044,
+    "median_pct": -0.2524,
+    "ci95_pct": [
+     -0.4728,
+     0.064
+    ],
+    "t_stat": -1.493,
+    "hit_rate_pct": 41.27
+   }
+  },
+  "close_T3": {
+   "gross": {
+    "n": 63,
+    "mean_pct": -0.2547,
+    "median_pct": -0.1439,
+    "ci95_pct": [
+     -0.5755,
+     0.0662
+    ],
+    "t_stat": -1.556,
+    "hit_rate_pct": 44.44
+   },
+   "net": {
+    "n": 63,
+    "mean_pct": -0.3547,
+    "median_pct": -0.2439,
+    "ci95_pct": [
+     -0.6755,
+     -0.0338
+    ],
+    "t_stat": -2.167,
+    "hit_rate_pct": 42.86
+   },
+   "spy_sensitivity_gross": {
+    "n": 63,
+    "mean_pct": -0.289,
+    "median_pct": -0.4013,
+    "ci95_pct": [
+     -0.797,
+     0.2189
+    ],
+    "t_stat": -1.115,
+    "hit_rate_pct": 46.03
+   }
+  }
+ },
+ "gst": {
+  "events_with_gst": 42,
+  "anchors_with_gst_coverage": [
+   "INTC",
+   "NVDA"
+  ],
+  "anchors_without_gst_coverage": [
+   "AMD"
+  ],
+  "high_gst_events": 2,
+  "low_gst_events": 40,
+  "high_net": {
+   "n": 2,
+   "mean_pct": -0.6878,
+   "median_pct": -0.6878,
+   "ci95_pct": [
+    -1.6532,
+    0.2776
+   ],
+   "t_stat": -1.396,
+   "hit_rate_pct": 0.0
+  },
+  "low_net": {
+   "n": 40,
+   "mean_pct": -0.0522,
+   "median_pct": -0.0555,
+   "ci95_pct": [
+    -0.1906,
+    0.0861
+   ],
+   "t_stat": -0.74,
+   "hit_rate_pct": 42.5
+  },
+  "continuous_interaction": {
+   "slope_pct_per_z": -0.1444,
+   "intercept_pct": -0.0173,
+   "correlation": -0.2776,
+   "n": 42
+  }
+ },
+ "by_anchor": {
+  "AMD": {
+   "n": 21,
+   "mean_pct": -0.447,
+   "median_pct": -0.291,
+   "ci95_pct": [
+    -0.7067,
+    -0.1873
+   ],
+   "t_stat": -3.374,
+   "hit_rate_pct": 23.81
+  },
+  "INTC": {
+   "n": 21,
+   "mean_pct": -0.0398,
+   "median_pct": -0.0563,
+   "ci95_pct": [
+    -0.1734,
+    0.0938
+   ],
+   "t_stat": -0.584,
+   "hit_rate_pct": 42.86
+  },
+  "NVDA": {
+   "n": 21,
+   "mean_pct": -0.1252,
+   "median_pct": -0.1105,
+   "ci95_pct": [
+    -0.3782,
+    0.1278
+   ],
+   "t_stat": -0.97,
+   "hit_rate_pct": 38.1
+  }
+ },
+ "descriptive_by_edge_type": {
+  "COMPETITOR": {
+   "n_rows": 21,
+   "mean_signed_pct": 0.2215
+  },
+  "CUSTOMER_DEMAND": {
+   "n_rows": 252,
+   "mean_signed_pct": -0.0771
+  },
+  "EQUIPMENT": {
+   "n_rows": 189,
+   "mean_signed_pct": -0.0267
+  },
+  "NETWORKING": {
+   "n_rows": 126,
+   "mean_signed_pct": 0.0693
+  },
+  "SERVER_INTEGRATOR": {
+   "n_rows": 126,
+   "mean_signed_pct": -0.5307
+  },
+  "SUPPLIER_FOUNDRY": {
+   "n_rows": 42,
+   "mean_signed_pct": -0.0159
+  }
+ },
+ "descriptive_by_graph_distance": {
+  "1": {
+   "n_rows": 378,
+   "mean_signed_pct": -0.166
+  },
+  "2": {
+   "n_rows": 378,
+   "mean_signed_pct": -0.042
+  }
+ },
+ "pseudo_replication_note": "edge-type and distance tables are neighbor-level and descriptive only; primary inference is anchor-event level",
+ "older_vs_newer": {
+  "split_at": "2023-05-03",
+  "older_net": {
+   "n": 32,
+   "mean_pct": -0.1477,
+   "median_pct": -0.1308,
+   "ci95_pct": [
+    -0.3297,
+    0.0343
+   ],
+   "t_stat": -1.59,
+   "hit_rate_pct": 31.25
+  },
+  "newer_net": {
+   "n": 31,
+   "mean_pct": -0.2622,
+   "median_pct": -0.1967,
+   "ci95_pct": [
+    -0.4603,
+    -0.0641
+   ],
+   "t_stat": -2.594,
+   "hit_rate_pct": 38.71
+  }
+ },
+ "comparators": {
+  "randomized_anchor_sign_permutation": {
+   "n_permutations": 10000,
+   "observed_mean_pct": -0.104,
+   "permuted_mean_pct": -0.0014,
+   "permuted_sd_pct": 0.0688,
+   "two_sided_p": 0.1327
+  },
+  "all_anchor_events_net": {
+   "n": 63,
+   "mean_pct": -0.204,
+   "median_pct": -0.1546,
+   "ci95_pct": [
+    -0.338,
+    -0.07
+   ],
+   "t_stat": -2.984,
+   "hit_rate_pct": 34.92
+  },
+  "no_trade": {
+   "mean_pct": 0.0,
+   "n": 0
+  },
+  "smh_benchmark": "neighbor returns are already benchmark-adjusted against SMH"
+ },
+ "decision_label": "NO_DAILY_NETWORK_SPILLOVER",
+ "models_fitted": false,
+ "models_note": "63 anchor events survived; machine-learning models were permitted at >=30 but this brief's report is the fixed event-level analysis, so none was fitted and no feature or hyperparameter search was run."
+}
