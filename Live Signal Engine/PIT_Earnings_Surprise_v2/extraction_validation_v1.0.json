@@ -1,0 +1,71 @@
+{
+ "artifact": "PIT_EARNINGS_SURPRISE_V2_EXTRACTION_VALIDATION",
+ "version": "1.0",
+ "status": "EXPLORATORY_RETROSPECTIVE_DEVELOPMENT_ONLY",
+ "google_trends_used": false,
+ "analyst_estimates_used": false,
+ "later_xbrl_used_for_prediction": false,
+ "later_xbrl_role": "audit reference only; cannot select, replace or feed a feature",
+ "dev_sample": {
+  "rule": "SHA-256 rank of 'PIT_EARNINGS_SURPRISE_V2_DEV_SAMPLE|ticker|fiscal_period|accession', first 2 per ticker; no reference to returns",
+  "seed": "PIT_EARNINGS_SURPRISE_V2_DEV_SAMPLE",
+  "per_ticker": 2,
+  "n": 48,
+  "tickers": 24
+ },
+ "events_seen": 605,
+ "with_exhibit": 531,
+ "extracted_counts": {
+  "revenue": 383,
+  "operating_income": 375,
+  "diluted_eps": 359
+ },
+ "validation_counts": {
+  "revenue": {
+   "validated": 56,
+   "compared": 383
+  },
+  "operating_income": {
+   "validated": 76,
+   "compared": 375
+  },
+  "diluted_eps": {
+   "validated": 237,
+   "compared": 359
+  }
+ },
+ "validation_rates": {
+  "revenue": 0.1462,
+  "operating_income": 0.2027,
+  "diluted_eps": 0.6602
+ },
+ "contradicted_by_reference": {
+  "operating_income": 195,
+  "revenue": 114,
+  "diluted_eps": 44
+ },
+ "no_reference_available": {
+  "revenue": 213,
+  "operating_income": 104,
+  "diluted_eps": 78
+ },
+ "validated_among_comparable": {
+  "revenue": 0.3294,
+  "operating_income": 0.2804,
+  "diluted_eps": 0.8434
+ },
+ "rate_definition": "validation_rates = validated / EXTRACTED, the gate's definition. validated_among_comparable = validated / (validated + contradicted), excluding extractions with no later-XBRL reference in window.",
+ "events_with_2plus_components": 382,
+ "tolerances": {
+  "revenue_operating_income_relative": 0.005,
+  "eps_absolute": 0.01
+ },
+ "gate_thresholds": {
+  "tickers": 18,
+  "events": 180,
+  "oos": 120,
+  "oos_per_year": 30,
+  "validation_rate": 0.9
+ },
+ "extraction_gate_passed": false
+}

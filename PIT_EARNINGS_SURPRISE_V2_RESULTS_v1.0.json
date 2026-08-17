@@ -1,0 +1,90 @@
+{
+ "artifact": "PIT_EARNINGS_SURPRISE_V2_RESULTS",
+ "version": "1.0",
+ "status": "EXPLORATORY_RETROSPECTIVE_DEVELOPMENT_ONLY",
+ "decision_label": "EXTRACTION_NOT_RELIABLE",
+ "google_trends_used": false,
+ "analyst_estimates_used": false,
+ "later_xbrl_used_for_prediction": false,
+ "later_xbrl_role": "audit reference only; never selected, replaced or fed a value into any feature",
+ "stopped_at": "phase_1_extraction_quality_gate",
+ "motivation": "Direct correction of the measurement failure reported by the Earnings Information Absorption branch, which used previously filed XBRL rather than the figures announced on the day.",
+ "dev_sample": {
+  "rule": "SHA-256 rank of 'PIT_EARNINGS_SURPRISE_V2_DEV_SAMPLE|ticker|fiscal_period|accession', first 2 per ticker; no reference to returns",
+  "n": 48,
+  "tickers": 24,
+  "outcome_blind": true
+ },
+ "coverage": {
+  "item_202_events": 605,
+  "events_with_exhibit": 531,
+  "events_with_2plus_components": 382
+ },
+ "extraction": {
+  "revenue": {
+   "extracted": 383,
+   "validated": 56,
+   "contradicted_by_reference": 114,
+   "no_reference_available": 213,
+   "validation_rate_gate_definition": 0.1462,
+   "validated_among_comparable": 0.3294
+  },
+  "operating_income": {
+   "extracted": 375,
+   "validated": 76,
+   "contradicted_by_reference": 195,
+   "no_reference_available": 104,
+   "validation_rate_gate_definition": 0.2027,
+   "validated_among_comparable": 0.2804
+  },
+  "diluted_eps": {
+   "extracted": 359,
+   "validated": 237,
+   "contradicted_by_reference": 44,
+   "no_reference_available": 78,
+   "validation_rate_gate_definition": 0.6602,
+   "validated_among_comparable": 0.8434
+  }
+ },
+ "rate_definition": "validation_rate_gate_definition = validated / extracted, the gate's denominator. validated_among_comparable = validated / (validated + contradicted), excluding extractions with no later-XBRL reference in window; reported for diagnosis only and is not a substitute for the gate metric.",
+ "tolerances": {
+  "revenue_operating_income_relative": 0.005,
+  "eps_absolute": 0.01,
+  "loosened_after_seeing_results": false
+ },
+ "gate": {
+  "required_validation_rate_each_component": 0.9,
+  "required_tickers": 18,
+  "required_events": 180,
+  "required_oos": 120,
+  "required_oos_per_year": 30,
+  "passed": false,
+  "failing_components": ["revenue", "operating_income", "diluted_eps"]
+ },
+ "diagnosed_failure_modes": [
+  "Wrong row selection: 'Sales and maturities of marketable securities' (a cash-flow-statement line) was selected as revenue in 22 events; revenue row patterns anchored on 'sales' match non-income-statement rows in filers whose income statement uses different wording.",
+  "Wrong column or unit scale: operating income is contradicted in 195 of 271 comparable extractions, consistent with selecting a prior-year column or misresolving thousands/millions where the unit caption sits outside the table markup."
+ ],
+ "not_run_because_gate_failed": {
+  "frozen_design_outcome_commit": "not created",
+  "surprise_construction": "not run",
+  "information_reaction_gap": "not run",
+  "model_b_vs_model_c": "not run",
+  "block_bootstrap": "not run",
+  "trading_simulation": "not run",
+  "post_entry_returns_inspected": false
+ },
+ "failure_mode_classification": "inadequate_extraction",
+ "failure_mode_note": "Not 'reliable extraction but no predictive value' and not 'predictive value eliminated by costs'. Neither was reached. Whether point-in-time earnings surprises predict post-announcement drift remains untested here.",
+ "prohibited_interpretations_not_made": [
+  "analyst surprise",
+  "consensus miss",
+  "fair value",
+  "intrinsic value",
+  "proven mispricing",
+  "causal underreaction"
+ ],
+ "correction_to_interim_statement": "An interim diagnostic in development reported zero reference mismatches. That was an artifact of the audit table recording the reference value only on a successful match, which made contradictions invisible. The corrected counts are recorded above (revenue 114, operating income 195, diluted EPS 44 contradicted) and make the gate failure more clear-cut, not less.",
+ "most_important_limitation": "Correct measurement of release-day figures is the binding constraint and is an engineering problem, not a modeling one. A deterministic multi-filer Exhibit 99.1 table parser reaching 90% audit validation on all three GAAP components was not achievable within the time budget. A credible successor needs per-filer income-statement templates or table-structure identification of the income statement before row matching, validated on held-out filers.",
+ "reproduce": "python tools/validate_exhibit_extraction.py"
+}
