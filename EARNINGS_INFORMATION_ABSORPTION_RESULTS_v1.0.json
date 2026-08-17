@@ -1,0 +1,187 @@
+{
+ "artifact": "EARNINGS_INFORMATION_ABSORPTION_RESULTS",
+ "version": "1.0",
+ "status": "EXPLORATORY_RETROSPECTIVE_DEVELOPMENT_ONLY",
+ "google_trends_used": false,
+ "construct": "information-price RESIDUAL PROXY; not intrinsic value, fair value, mispricing, analyst surprise, or proof of underreaction",
+ "feasibility_gate": {
+  "tickers": 22,
+  "events": 472,
+  "oos_events": 261,
+  "oos_by_year": {
+   "2024": 88,
+   "2025": 87,
+   "2023": 86
+  },
+  "required": {
+   "tickers": 18,
+   "events": 150,
+   "oos": 100,
+   "oos_per_year": 25
+  },
+  "duplicate_identities_refused": 0,
+  "passed": true
+ },
+ "stage1": {
+  "n_oos": 261,
+  "null_mae": 0.025983,
+  "info_mae": 0.02597,
+  "improvement_pct": 0.0501,
+  "info_rmse": 0.038579,
+  "info_r2_oos": -0.06033,
+  "by_year": {
+   "2023": {
+    "null_mae": 0.027064,
+    "info_mae": 0.0271,
+    "info_better": false
+   },
+   "2024": {
+    "null_mae": 0.027388,
+    "info_mae": 0.027338,
+    "info_better": true
+   },
+   "2025": {
+    "null_mae": 0.023494,
+    "info_mae": 0.02347,
+    "info_better": true
+   }
+  },
+  "bootstrap_null_minus_info": {
+   "mean": 1.3014261694561708e-05,
+   "ci95": [
+    -9.035396486218812e-05,
+    0.00011276205146932625
+   ],
+   "draws": 2000,
+   "block_weeks": 4,
+   "seed": 20260817,
+   "entirely_above_zero": false
+  },
+  "gates": {
+   "improves_1pct": false,
+   "ci_above_zero": false,
+   "better_in_2of3": true
+  },
+  "passes": false
+ },
+ "stage2": {
+  "five_day": {
+   "n_oos": 175,
+   "B_mae": 0.03565,
+   "C_mae": 0.035609,
+   "improvement_pct": 0.1146,
+   "C_rmse": 0.048865,
+   "C_r2_oos": -0.26887,
+   "spearman_ic": -0.0898,
+   "by_year": {
+    "2024": {
+     "B_mae": 0.036115,
+     "C_mae": 0.036006,
+     "C_better": true,
+     "ic": -0.1852,
+     "ic_positive": false
+    },
+    "2025": {
+     "B_mae": 0.035179,
+     "C_mae": 0.035207,
+     "C_better": false,
+     "ic": -0.0083,
+     "ic_positive": false
+    }
+   },
+   "bootstrap_B_minus_C": {
+    "mean": 4.0866213090521165e-05,
+    "ci95": [
+     -0.0001066662540966229,
+     0.00016849220086491187
+    ],
+    "draws": 2000,
+    "block_weeks": 4,
+    "seed": 20260817,
+    "entirely_above_zero": false
+   },
+   "gates": {
+    "improves_1pct": false,
+    "ci_above_zero": false,
+    "beats_in_2of3": false,
+    "ic_above_0_03": false,
+    "ic_positive_2of3": false
+   },
+   "passes": false,
+   "gap_coefficients": {
+    "information_price_gap": {
+     "mean": -0.002227,
+     "sign_stable": true
+    },
+    "gap_x_novelty": {
+     "mean": 0.00025,
+     "sign_stable": true
+    }
+   }
+  },
+  "twenty_day": {
+   "n_oos": 175,
+   "B_mae": 0.06342,
+   "C_mae": 0.064179,
+   "improvement_pct": -1.196,
+   "C_rmse": 0.084971,
+   "C_r2_oos": -0.16121,
+   "spearman_ic": -0.0802,
+   "by_year": {
+    "2024": {
+     "B_mae": 0.066845,
+     "C_mae": 0.068056,
+     "C_better": false,
+     "ic": -0.1149,
+     "ic_positive": false
+    },
+    "2025": {
+     "B_mae": 0.059956,
+     "C_mae": 0.060258,
+     "C_better": false,
+     "ic": -0.042,
+     "ic_positive": false
+    }
+   },
+   "bootstrap_B_minus_C": {
+    "mean": -0.0007585224494196423,
+    "ci95": [
+     -0.001747938563462117,
+     -1.9173828389956048e-05
+    ],
+    "draws": 2000,
+    "block_weeks": 4,
+    "seed": 20260817,
+    "entirely_above_zero": false
+   },
+   "gates": {
+    "improves_1pct": false,
+    "ci_above_zero": false,
+    "beats_in_2of3": false,
+    "ic_above_0_03": false,
+    "ic_positive_2of3": false
+   },
+   "passes": false,
+   "gap_coefficients": {
+    "information_price_gap": {
+     "mean": -0.002849,
+     "sign_stable": false
+    },
+    "gap_x_novelty": {
+     "mean": 0.001784,
+     "sign_stable": false
+    }
+   }
+  }
+ },
+ "trading": {
+  "status": "not run: predictive gates did not both pass; no strategy is manufactured from a failed gate"
+ },
+ "decision_label": "INFORMATION_FEATURES_DO_NOT_EXPLAIN_INITIAL_REACTION",
+ "stage1_coefficients": {
+  "numeric_information_score": 0.000304,
+  "text_novelty": -0.000335,
+  "num_x_novelty": 0.000993
+ },
+ "runtime_seconds": 140.6
+}

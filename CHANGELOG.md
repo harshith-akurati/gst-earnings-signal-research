@@ -1,6 +1,44 @@
 # Changelog
 
 
+## 2026-08-17 — Earnings Information Absorption MVP: INFORMATION_FEATURES_DO_NOT_EXPLAIN_INITIAL_REACTION
+
+`EXPLORATORY_RETROSPECTIVE_DEVELOPMENT_ONLY` · **`google_trends_used: false`**. No GST artifact,
+HYP-01 lock, F5 state, registry, protocol, production constant or prior result touched.
+
+Measured quantity is an **information–price residual proxy** — not intrinsic value, fair value,
+mispricing, analyst surprise, or proof of underreaction.
+
+**Sample.** 22 of the locked 24 tickers, **472 unique events** `(ticker, fiscal_period_end,
+accession)`, **261 OOS** (2023: 86 · 2024: 88 · 2025: 87). Zero duplicate identities. Gate required
+18 / 150 / 100 / 25-per-year — cleared. Folds train ≤2022→2023, ≤2023→2024, ≤2024→2025.
+
+**Stage 1 (gating) FAILED.** Reaction-session abnormal return: null MAE **0.025983** vs information
+model **0.025970** — **+0.050%** against a required 1.0%. Bootstrap (2,000 draws, 4-week blocks) on
+`null − info`: **95% CI [−9.04e-05, +1.13e-04]**, straddles zero. Info model OOS R² **−0.06033**
+(worse than the sample mean). Better in 2 of 3 years, but 1 of 3 gates is not a pass.
+
+**Stage 2 reported for completeness, gated off.** 5-day: B 0.035650 vs C 0.035609 (+0.115%), CI
+[−1.07e-04, +1.68e-04], **Spearman IC −0.0898** — all five gates fail. 20-day: B 0.063420 vs C
+0.064179 (**−1.196%, worse**), CI entirely below zero, IC −0.0802. **No trading test was run**; no
+strategy is manufactured from a failed gate.
+
+**Which link broke: the information model, not the drift test.** Costs were never reached. The
+diagnosis is disclosed rather than patched mid-run — XBRL facts for the quarter being announced are
+generally filed later with the 10-Q, so a strictly point-in-time build using XBRL alone encodes
+*previously filed* quarters plus text novelty, not the figures actually released that day. A credible
+successor would parse reported figures from the Exhibit 99.1 text itself.
+
+The frozen design (features, folds, models, metrics, thresholds, gates) was committed in `148eb39`
+**before** any outcome analysis ran. One extraction defect was found and fixed before any outcome was
+inspected: the exhibit selector matched only `ex99`-style names and missed `exhibit9919302025.htm`,
+`q2fy26exhibit991er.htm`, `googexhibit991q32025.htm`, dropping 7 tickers; broadening it raised
+coverage 17 → 22 tickers. **The feasibility gate itself was never lowered.**
+
+No claim of analyst-expectation surprise, intrinsic value, causal underreaction, market inefficiency,
+investability, or generalization outside this sample.
+
+
 ## 2026-08-16 — Restaurant search pilot: NO_INCREMENTAL_SEARCH_VALUE
 
 `EXPLORATORY_RETROSPECTIVE_DEVELOPMENT_ONLY`. Not HYP-01 confirmation, not prospective collection.
