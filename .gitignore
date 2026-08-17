@@ -7,5 +7,3 @@ __pycache__/
 
 # Local Claude Code session config (permission allowlist etc.), not project content.
 .claude/
-
-Live Signal Engine/Earnings_Information_Absorption/_cache/
