@@ -1,6 +1,56 @@
 # Changelog
 
 
+## 2026-08-17 — Point-in-time earnings surprise v2: EXTRACTION_NOT_RELIABLE
+
+`EXPLORATORY_RETROSPECTIVE_DEVELOPMENT_ONLY`. `google_trends_used: false`,
+`analyst_estimates_used: false`, `later_xbrl_used_for_prediction: false`.
+
+Direct correction attempt of the measurement failure reported by the Earnings Information Absorption
+branch, which used previously filed XBRL rather than the figures announced on the day. A
+deterministic Exhibit 99.1 table parser was built to read release-day GAAP revenue, operating income
+and diluted EPS. **It did not reach the extraction-quality gate, so the experiment stopped before any
+outcome stage.**
+
+Parser development used an outcome-blind sample — SHA-256 rank of
+`PIT_EARNINGS_SURPRISE_V2_DEV_SAMPLE|ticker|fiscal_period|accession`, first 2 per ticker — **48
+events across 24 tickers**. Returns were never consulted.
+
+605 Item 2.02 events, 531 with a locatable exhibit, 382 with 2+ components.
+
+| Component | Extracted | Validated | Contradicted | No reference | Rate (validated ÷ extracted) |
+|---|---|---|---|---|---|
+| Revenue | 383 | 56 | 114 | 213 | **0.1462** |
+| Operating income | 375 | 76 | 195 | 104 | **0.2027** |
+| Diluted EPS | 359 | 237 | 44 | 78 | **0.6602** |
+
+Gate requires ≥ 0.90 on each; all three fail. Restricted to extractions with a reference in window,
+validation is 0.3294 / 0.2804 / 0.8434 — still short, and reported for diagnosis only.
+
+Two diagnosed defects, both found without inspecting returns: revenue row patterns anchored on
+`sales` selected `Sales and maturities of marketable securities` (a cash-flow line) in 22 events; and
+operating income contradicts the reference in 195 of 271 comparable cases, consistent with prior-year
+column selection or unit-scale misresolution where the caption sits outside the table markup.
+
+**Not run:** frozen-design outcome commit, surprise construction, information–reaction gap, Model B
+vs C, bootstrap, trading simulation. Tolerances (0.5% relative / $0.01 EPS) were not loosened, no
+value was hand-corrected, and no post-entry return was inspected. Later XBRL was an audit reference
+only and never selected, replaced or fed a value into a feature.
+
+Of the three failure modes the task distinguishes, this is **inadequate extraction** — not "reliable
+extraction but no predictive value" and not "predictive value eliminated by costs". Whether
+point-in-time earnings surprises predict drift remains untested. Nothing is called an analyst
+surprise, consensus miss, fair value, intrinsic value, proven mispricing or causal underreaction.
+
+An interim development diagnostic reported zero reference mismatches; that was an artifact of the
+audit table storing the reference value only on a successful match. The corrected counts are above.
+
+Artifacts: `PIT_EARNINGS_SURPRISE_V2_RESULTS_v1.0.json`, `PIT_EARNINGS_SURPRISE_V2_REPORT_v1.0.md`,
+`Live Signal Engine/PIT_Earnings_Surprise_v2/`, `tools/exhibit99_parser.py`,
+`tools/validate_exhibit_extraction.py`,
+`test_market_response_pit_earnings_surprise_v2.py` (74 checks).
+
+
 ## 2026-08-16 — Restaurant search pilot: NO_INCREMENTAL_SEARCH_VALUE
 
 `EXPLORATORY_RETROSPECTIVE_DEVELOPMENT_ONLY`. Not HYP-01 confirmation, not prospective collection.
