@@ -1,6 +1,53 @@
 # Changelog
 
 
+## 2026-08-16 — Daily-delay network spillover: NO_DAILY_NETWORK_SPILLOVER
+
+`EXPLORATORY_RETROSPECTIVE_NETWORK_DEVELOPMENT_ONLY`. No HYP-01 lock, registry, F5 artifact, universe
+constant or prospective observation read or modified.
+
+**63 usable anchor events** (21 each NVDA/AMD/INTC), 2021-01-15 → 2025-11-20, from SEC 8-K item 2.02
+filings with acceptance-time-derived sessions. Zero dropped. Executable by construction: the anchor's
+SMH-adjusted return through close(T) is known after that close, and neighbors are entered at
+**open(T+1)** — neighbor open(T) is never used.
+
+| Exit | Gross | Net (10 bps) | 95% CI (net) | t | Hit |
+|---|---|---|---|---|---|
+| close(T+1) | −0.1040% | **−0.2040%** | [−0.338, −0.070] | −2.98 | 34.9% |
+| close(T+3) | −0.2547% | **−0.3547%** | [−0.676, −0.034] | −2.17 | 42.9% |
+
+**The naive interval and the permutation test disagree, and the permutation governs.** Almost all of
+the net t of −2.98 is the fixed cost subtraction; the **gross** CI already straddles zero
+([−0.238, +0.030], t = −1.52), and the event-level randomized-sign permutation (10,000 draws) returns
+**two-sided p = 0.1327**. The honest reading is no reliable directional spillover — not a tradable
+short.
+
+**GST cannot be assessed here.** Under the threshold frozen before outcomes (z ≥ 1.0) only **2 of 42**
+GST-covered events qualify (high −0.6878%, n=2; low −0.0522%, n=40). n = 2 supports no conclusion and
+the threshold was **not** moved after seeing that. The continuous view points the same way: slope
+−0.1444 pp per z, correlation −0.2776 over 42 events — higher pre-event attention associates with
+*more negative* signed spillover. Weekly GST exists for NVDA and INTC only; **AMD has none**, so its
+21 events enter the spillover analysis but no GST comparison. High-z rarity is structural: the
+pre-event z uses only weeks closing before the event, deliberately excluding the release's own spike.
+
+By anchor: AMD −0.4470% (CI [−0.707, −0.187]) is the only individually negative one; NVDA −0.1252%
+and INTC −0.0398% both straddle zero. Older (32 events) −0.1477% vs newer (31) −0.2622% — absent in
+both halves. SPY sensitivity: gross −0.2044%, CI [−0.473, +0.064], same conclusion.
+
+Descriptive neighbor-level only (1,512 rows, not independent): best `COMPETITOR` +0.2215% (21 rows),
+worst `SERVER_INTEGRATOR` −0.5307% (126 rows); distance 1 −0.166% vs distance 2 −0.042%, i.e. closer
+relationships are *more* negative — the opposite of a decaying-spillover story.
+
+63 events survived so models were permitted at the 30-event threshold, but this brief's report is the
+fixed event-level analysis and none was fitted: no feature search, no hyperparameter tuning, no
+alternative entry, exit, cost or threshold. The relationship map is the same frozen exploratory
+**static** table as PR #25 — edge types are labels, not evidence of causal supply-chain exposure, and
+none was inferred from returns. Daily OHLC for the 17 symbols and the SEC event list are committed so
+the study reruns offline.
+
+This does not test intraday spillover, which remains blocked on data in PR #25.
+
+
 ## 2026-08-16 — GST does not improve out-of-sample magnitude forecasting
 
 `RETROSPECTIVE_DEVELOPMENT_ONLY`. Confirms nothing about HYP-01. **No directional trading or
