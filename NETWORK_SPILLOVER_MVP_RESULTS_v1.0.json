@@ -1,0 +1,95 @@
+{
+ "artifact": "NETWORK_SPILLOVER_MVP_RESULTS",
+ "version": "1.0",
+ "status": "EXPLORATORY_RETROSPECTIVE_NETWORK_DEVELOPMENT_ONLY",
+ "touches_hyp01_or_prospective_state": false,
+ "quantum_kernels_implemented": false,
+ "design": {
+  "anchors": [
+   "NVDA",
+   "AMD",
+   "INTC"
+  ],
+  "neighbors": [
+   "TSM",
+   "ASML",
+   "AMAT",
+   "LRCX",
+   "AVGO",
+   "ANET",
+   "DELL",
+   "SMCI",
+   "MSFT",
+   "AMZN",
+   "GOOGL",
+   "META"
+  ],
+  "benchmarks": [
+   "SMH",
+   "SPY"
+  ],
+  "relationship_table": "Live Signal Engine/Network_Spillover_MVP/network_relationships_v1.0.csv",
+  "relationship_status": "EXPLORATORY_STATIC; edge types are labels, not evidence of causal supply-chain exposure; none inferred from returns",
+  "anchor_reaction_cutoff_et": "09:35",
+  "earliest_neighbor_entry_et": "09:40",
+  "exits": [
+   "same_day_close",
+   "next_day_close",
+   "third_trading_day_close"
+  ],
+  "cost_bps_round_trip": 10.0,
+  "attention_variable": "strictly pre-event GST z (weeks closing before the event), the PR #24 construction",
+  "overlapping_spike_classification_used": false,
+  "required_history_start": "2021-01-01"
+ },
+ "data_probe": {
+  "five_minute_probes": [
+   {
+    "days_back": 30,
+    "bars": 1561,
+    "first_epoch": 1784554200,
+    "last_epoch": 1786737600
+   },
+   {
+    "days_back": 59,
+    "bars": 3043,
+    "first_epoch": 1782135000,
+    "last_epoch": 1786737600
+   },
+   {
+    "days_back": 90,
+    "bars": -1,
+    "error": "HTTPError: HTTP Error 422: Unprocessable Entity"
+   },
+   {
+    "days_back": 400,
+    "bars": -1,
+    "error": "HTTPError: HTTP Error 422: Unprocessable Entity"
+   }
+  ],
+  "max_days_back_with_bars": 59,
+  "deep_history_available": false,
+  "recent_window_available": true,
+  "providers": {
+   "alpaca_env_vars_present": false,
+   "other_provider_key_names_present": [],
+   "note": "credential VALUES are never read, printed, logged or committed"
+  },
+  "repository_intraday_bars_present": false,
+  "repository_daily_columns": [
+   "Date",
+   "Open",
+   "Close"
+  ]
+ },
+ "decision_label": "DATA_UNAVAILABLE",
+ "reason": "Historical 5-minute bars could not be obtained for the required period. The public chart endpoint serves 5-minute data only for roughly the last 59 days (90-day and longer requests return HTTP 422); the repository contains daily Open/Close only; no Alpaca credentials are present in the environment; and the other providers probed require an API key that is not configured. The 09:35 reaction read and 09:40 entry this design requires cannot be constructed.",
+ "substitution_refused": "Daily open/close was NOT substituted. Reading the anchor's direction from the opening gap and entering neighbors at that same open is an impossible trade.",
+ "what_would_unblock_this": [
+  "APCA_API_KEY_ID / APCA_API_SECRET_KEY for the already-implemented Alpaca provider",
+  "any keyed intraday vendor (Polygon, Tiingo, Alpha Vantage, Finnhub)",
+  "a committed historical 5-minute bar archive for the anchors, neighbors, SMH and SPY"
+ ],
+ "computed_returns": null,
+ "anchor_events_evaluated": 0
+}
