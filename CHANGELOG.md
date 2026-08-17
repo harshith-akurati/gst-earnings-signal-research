@@ -1,6 +1,42 @@
 # Changelog
 
 
+## 2026-08-16 — Network-spillover MVP: DATA_UNAVAILABLE (no intraday bars)
+
+`EXPLORATORY_RETROSPECTIVE_NETWORK_DEVELOPMENT_ONLY`. No HYP-01 lock, registry, F5 artifact, universe
+constant or prospective observation was read or modified. No quantum kernel is implemented.
+
+**Decision: `DATA_UNAVAILABLE`. Zero anchor events evaluated; no spillover return is reported.**
+
+The design reads the anchor's reaction **through 09:35 ET** and enters neighbors **no earlier than the
+09:40 ET bar**, which daily data cannot support. Every available source was probed: the public chart
+endpoint serves 5-minute bars for only **~59 days** (30d → 1,561 bars, 59d → 3,043; **90d and 400d
+return HTTP 422**); this repository holds daily `Date, Open, Close` only; Alpaca credentials are
+absent from the environment and no credential file exists; Polygon returns 401; the Alpha Vantage
+demo key is rejected; Stooq is daily-only; and `yfinance` returns 0 bars at every interval here,
+including daily, independent of the 60-day cap. The anchor earnings history needed runs back to 2021.
+
+**Daily open/close was NOT substituted.** Reading the anchor's direction from the opening gap and then
+entering neighbors at that same open would make the signal price the assumed fill — an impossible
+trade that would have produced a confident-looking number nobody could have earned. The prohibition is
+enforced in code (`refuse_impossible_substitution()`), and the focused test calls it to confirm it
+raises.
+
+**Frozen pre-retrieval deliverables stand**, so a later run with intraday access changes only the data
+layer: `Live Signal Engine/Network_Spillover_MVP/network_relationships_v1.0.csv` (42 rows, 3 anchors ×
+14 neighbors, all six permitted edge types, every row `EXPLORATORY_STATIC` — labels, not evidence of
+causal supply-chain exposure, none inferred from returns) and `tools/run_network_spillover_mvp.py`
+(09:35 cutoff, 09:40 entry, three fixed exits, 10 bps round trip, SMH benchmark with SPY as
+sensitivity, strictly pre-event GST z from PR #24; the overlapping spike classification is never used
+as pre-event evidence).
+
+No entry time, exit window, cost or threshold was searched; no model was fitted; no neighbor return
+was computed. Whether an anchor's observable reaction predicts delayed linked-firm returns **remains
+untested** — this entry is not evidence either way. Unblocking needs Alpaca credentials for the
+already-implemented provider, any keyed intraday vendor, or a committed 5-minute archive. No
+credential value was read, printed, logged or committed.
+
+
 ## 2026-08-16 — GST does not improve out-of-sample magnitude forecasting
 
 `RETROSPECTIVE_DEVELOPMENT_ONLY`. Confirms nothing about HYP-01. **No directional trading or
