@@ -1,6 +1,51 @@
 # Changelog
 
 
+## 2026-08-17 — New prospective study: Attention–Implied Volatility Dislocation (collection stage)
+
+Opens an independent prospective study asking whether pre-announcement search attention contains
+incremental information about **earnings-move magnitude** beyond what the options market already
+prices. **This is not a GST-to-stock-return regression**: attention supplies magnitude information,
+options supply the benchmark, and **direction is never predicted**.
+
+**No outcome, return, trade or order was accessed. No historical outcome analysis was run.**
+
+**Collection-block scope determination**, made by reading the existing lock and changing nothing:
+the block is HYP-01-specific. Its controlling language conditions collection on F5 construct
+validity, the cohort protocol's pre-observation gates and the D11 event-60 environment freeze — all
+HYP-01 constructs tied to that study's locked 24-ticker universe. It does not on its own terms
+prohibit this independent follow-on study. **F5 remains OPEN and HYP-01 collection remains
+BLOCKED**; no HYP-01 artifact was modified or relied upon.
+
+`FROZEN_DESIGN_v1.0.md` was committed at `8dca199`, **before any Alpha Vantage, Tradier, Google
+Trends, price or earnings-calendar request**. It fixes the official-source universe rule (Nasdaq-100
+constituents, official Invesco QQQ holdings as a disclosed proxy; scraped and generated lists
+prohibited), prospective-only 90-day event timing with AMC/BMO snapshot-day rules and a 15:45 ET
+target, the T−2 search cutoff, nearest-strike selection at the first expiration strictly after the
+event, midpoint and executable straddle arithmetic, the dislocation definition, and a **75-event
+minimum** with four gates that are not altered afterwards.
+
+A four-mode collector (`doctor`, `calendar`, `snapshot`, `validate`) enforces the frozen rules
+mechanically: it refuses duplicate identities, quotes timestamped at or after the announcement, and
+missing or crossed markets, and **never substitutes a last price for a missing bid or ask**.
+Credential values are never printed, serialized, hashed, partially revealed or committed. Raw
+provider bodies stay repository-external; only a sanitized append-only manifest is committed. There
+is no order code path.
+
+**Access check.** `ALPHAVANTAGE_API_KEY` present; `TRADIER_TOKEN`, `TRADIER_SANDBOX_TOKEN` and
+`GOOGLE_TRENDS_ALPHA_KEY` absent. The Alpha Vantage calendar returned **1,817** candidate events
+within 90 days (dates only — its EPS fields are neither an outcome nor point-in-time analyst data).
+One Google Trends query succeeded as `NON_EVENT_RESEARCH_SYSTEM_VALIDATION` and was not stored.
+**No options snapshot was collected, and no website was scraped as a substitute** — the collector
+stops with setup instructions instead.
+
+The focused fixture test covers strike and expiration selection, midpoint and executable arithmetic,
+sandbox-delay labelling, last-price-substitution refusal, duplicate refusal, missing/crossed-market
+refusal, post-announcement timestamp refusal, the T−2 cutoff, credential non-disclosure, absence of
+any order endpoint, prohibited outcome fields, append-only behaviour and deterministic hashing.
+
+**Remaining blocker before daily collection: a Tradier token.**
+
 ## 2026-08-17 — Synthesis manuscript: "Signal Without Strategy"
 
 Converts the completed research program into a submission-ready paper. **No new financial data was
