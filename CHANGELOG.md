@@ -1,6 +1,65 @@
 # Changelog
 
 
+## 2026-08-17 — Attention–Options Dislocation: Alpaca provider amendment, and an honest stop
+
+**No observation was collected. No outcome, return, trade or order was created or retrieved.** The
+research manifest still does not exist.
+
+**Provider Amendment 1** (`PROVIDER_AMENDMENT_2026-08-17_ALPACA.md`, sha256
+`0417380b3115255ed65956a54b2120f789334a8f5a9afcde61e8ae184547df0f`) was committed at `55d8fc2`
+**before the first Alpaca network request of any kind**, and is **additive**: `FROZEN_DESIGN_v1.0.md`
+remains byte-identical at `dc270ef0…`, and exactly one commit in branch history touches it.
+
+Tradier is unavailable because its tokens require brokerage onboarding with a real legal identity and
+a real SSN; **no fabricated identity or third party's SSN was used to obtain market data**. Alpaca
+Paper Only's free **`indicative`** feed replaces it as the initial options provider. Every Alpaca
+record must carry **`ALPACA_INDICATIVE_NON_EXECUTABLE`**. The feed is **not** consolidated OPRA
+execution-quality data — trades may be delayed, quotes are modified/indicative. Such records may test
+whether attention improves realized-move forecasting beyond an options-implied benchmark; they may
+**not** support claims about executable bids or asks, spread costs, straddle P&L or tradeable options
+alpha. The execution-economics stage is deferred with **`OPRA_EXECUTION_DATA_UNAVAILABLE`**, and the
+collector mechanically refuses to emit an executable price on an indicative record. No statistical
+rule, attention feature, event rule, timestamp cutoff, contract-selection rule or primary forecast
+metric changed, and **no retrospective outcome was opened to justify the provider change**.
+
+**Alpaca authentication FAILED.** Both approved variables are PRESENT, but `data.alpaca.markets`
+returned **HTTP 401** for the options snapshot endpoint, for the equity market-data endpoint, and for
+the repository's own previously-proven bars path in `gst_market_response/alpaca_provider.py`, which
+records `LIVE_DIAGNOSTIC_PASSED` on 2026-08-04 with identical auth headers. An implementation defect
+is therefore ruled out: the credential pair itself is rejected, and this is not an options-entitlement
+problem. **The study stopped rather than substituting a provider or weakening the design.** Because
+authentication never succeeded, the live Alpaca schema has **never been observed**; the adapter is
+fixture-tested only and will stop with `PROVIDER_SCHEMA_INCOMPATIBLE` rather than bend the frozen
+formulas if the real schema differs.
+
+The collector now reaches Alpaca through **market-data endpoints only**, behind a guard that fails
+**closed** — a URL must be on the market-data allowlist to be requested at all. Order, position,
+account and trading endpoints are refused before any socket opens, and there is no order code path.
+Credentials are read only from `APCA_API_KEY_ID` / `APCA_API_SECRET_KEY` and are never printed,
+logged, serialized, hashed or committed, nor is any fingerprint derived from one. Raw bodies stay
+repository-external; only sanitized provenance is committed, split into a `RESEARCH`-only manifest
+and a separate append-only provenance ledger that system-validation data can never escape.
+
+**Universe:** the **primary** Nasdaq-100 official constituent source succeeded (HTTP 200, 21,775
+bytes, sha256 `dbdb857b…`, 102 raw → **101** issuers after issuer deduplication); the Invesco QQQ
+proxy was not needed and not requested. Identity fields only — no weights, no market values.
+Intersecting with the previously retrieved, still-unverified Alpha Vantage calendar gives **35
+candidate events** in the 90-day horizon, all `SCHEDULING_INPUT_UNVERIFIED`. **No event is eligible
+now**: the vendor supplies dates but not the AMC/BMO session, and the frozen window is 15:45 ET.
+Next required collection time is **2026-08-18 15:45 ET** if the earliest candidate (ADI, 2026-08-19)
+is confirmed BMO, otherwise **2026-08-19 15:45 ET** if confirmed AMC.
+
+The focused offline suite grew to **154 assertions**, all passing with sockets blocked. It proves the
+design is unchanged and was never rewritten, that the amendment commit predates every recorded Alpaca
+request and contained no Alpaca code, that credentials cannot reach any output or artifact, that only
+market-data endpoints are reachable and order endpoints fail closed, that the indicative label is
+mandatory, that no executable-price / spread-aware-alpha / straddle-P&L field can be emitted, that
+system-validation data cannot enter the research panel, and that wrong-window, post-announcement,
+duplicate, missing, crossed and stale records are refused.
+
+**Remaining blocker: a working Alpaca credential pair.**
+
 ## 2026-08-17 — New prospective study: Attention–Implied Volatility Dislocation (collection stage)
 
 Opens an independent prospective study asking whether pre-announcement search attention contains

@@ -16,11 +16,14 @@ account or order endpoint. There is no order code path to disable.
 from __future__ import annotations
 
 import argparse
+import csv
 import hashlib
+import io
 import json
 import os
 import re
 import sys
+import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import date, datetime, timedelta, timezone
@@ -41,12 +44,60 @@ REALTIME_LABEL = "REALTIME"
 SCHEDULING_LABEL = "SCHEDULING_INPUT_UNVERIFIED"
 
 CRED_VARS = ("ALPHAVANTAGE_API_KEY", "TRADIER_TOKEN", "TRADIER_SANDBOX_TOKEN",
-             "GOOGLE_TRENDS_ALPHA_KEY")
+             "GOOGLE_TRENDS_ALPHA_KEY", "APCA_API_KEY_ID", "APCA_API_SECRET_KEY")
+
+# ---------------------------------------------------------------------------
+# Provider Amendment 1 (2026-08-17) -- PROVIDER_AMENDMENT_2026-08-17_ALPACA.md
+#
+# Tradier requires brokerage onboarding with a real legal identity and a real SSN.
+# No fabricated identity is used, so Tradier stays unavailable. Alpaca Paper Only's
+# free `indicative` options feed is the study's initial options-data provider.
+#
+# The amendment is ADDITIVE. It changes no statistical rule, attention feature,
+# event rule, timestamp cutoff, contract-selection rule or primary forecast metric.
+# ---------------------------------------------------------------------------
+ALPACA_CRED_VARS = ("APCA_API_KEY_ID", "APCA_API_SECRET_KEY")
+ALPACA_DATA_HOST = "data.alpaca.markets"
+ALPACA_DATA_BASE = "https://" + ALPACA_DATA_HOST
+ALPACA_OPTIONS_FEED = "indicative"
+ALPACA_STOCK_FEED = "iex"
+ALPACA_LABEL = "ALPACA_INDICATIVE_NON_EXECUTABLE"
+ALPACA_OPTIONS_SNAPSHOT_PATH = "/v1beta1/options/snapshots/"
+
+SYSTEM_VALIDATION_LABEL = "NON_EVENT_SYSTEM_VALIDATION_ONLY"
+DEFERRED_EXECUTION_STATUS = "OPRA_EXECUTION_DATA_UNAVAILABLE"
+SCHEMA_INCOMPATIBLE_STATUS = "PROVIDER_SCHEMA_INCOMPATIBLE"
+STRIKE_SELECTION_METHOD = "NEAREST_STRIKE_TO_CONTEMPORANEOUS_UNDERLYING"
+
+RESEARCH_CLASS = "RESEARCH"
+VALIDATION_CLASS = "SYSTEM_VALIDATION"
+PROVENANCE_CLASS = "PROVENANCE"
+
+# Repository-committed, append-only, and explicitly NOT the research panel.
+PROVENANCE_LEDGER = STUDY / "collection_provenance.jsonl"
+
+# A quote older than this is stale. The indicative feed is not a latency guarantee.
+MAX_QUOTE_STALENESS_SECONDS = 900
+# Call and put must be contemporaneous for a straddle midpoint to mean anything.
+MAX_LEG_DIVERGENCE_SECONDS = 300
+# Tolerance around the frozen 15:45 ET snapshot target.
+SNAPSHOT_WINDOW_TOLERANCE_MINUTES = 10
+
+# Fail-closed endpoint guard. Only these market-data path prefixes may be requested.
+ALPACA_ALLOWED_PATH_PREFIXES = ("/v2/stocks/", "/v1beta1/options/")
+# Anything that could reach an account, a position, an order or the trading API.
+ALPACA_FORBIDDEN_ENDPOINT = re.compile(
+    r"((paper-)?api|broker-api)\.alpaca\.markets"
+    r"|/v2/(account|positions?|orders?|assets|watchlists|clock|calendar)"
+    r"|/v2/options/contracts"
+    r"|/orders?\b|/positions?\b|/trading\b", re.I)
 
 # Official constituent sources only. Scraped/aggregator/generated lists are prohibited.
 UNIVERSE_SOURCES = [
+    # Host corrected www.nasdaq.com -> api.nasdaq.com BEFORE any universe request
+    # was issued. Same official Nasdaq constituent source; only the API host differs.
     {"rank": 1, "name": "Nasdaq-100 official constituent source",
-     "url": "https://www.nasdaq.com/api/quote/list-type/nasdaq100",
+     "url": "https://api.nasdaq.com/api/quote/list-type/nasdaq100",
      "kind": "OFFICIAL_INDEX_CONSTITUENTS"},
     {"rank": 2, "name": "Invesco QQQ official holdings file (disclosed index proxy)",
      "url": ("https://www.invesco.com/us/financial-products/etfs/holdings/main/"
@@ -64,7 +115,31 @@ PERMITTED_MANIFEST_FIELDS = (
     "midpoint_implied_move", "executable_straddle_cost",
     "search_window_end", "search_features", "raw_response_sha256",
     "event_timing_status", "universe_source_kind", "collected_utc",
+    # Provider Amendment 1: provenance that is mandatory, not decorative.
+    "feed", "feed_designation", "data_class", "strike_selection_method",
+    "request_timestamp_utc", "response_status", "contract_symbol_call",
+    "contract_symbol_put", "underlying_price_source", "execution_economics_status",
+    "all_necessary_fields_present", "design_fields_absent",
 )
+
+# Recorded by frozen design section 4 for each leg. Absence is disclosed, not hidden.
+DESIGN_RECORDED_FIELDS = (
+    "call_bid", "call_ask", "call_mid", "call_last", "call_volume",
+    "call_open_interest", "call_iv", "put_bid", "put_ask", "put_mid", "put_last",
+    "put_volume", "put_open_interest", "put_iv",
+    "quote_timestamp_utc", "expiration", "strike", "provider",
+)
+# Without every one of these the record is REFUSED, never repaired.
+MANDATORY_RECORD_FIELDS = (
+    "call_bid", "call_ask", "put_bid", "put_ask", "quote_timestamp_utc",
+    "expiration", "strike", "underlying_price", "provider", "feed",
+    "feed_designation", "data_class",
+)
+
+# While the indicative feed is in force the execution-economics stage is deferred.
+EXECUTABLE_CLAIM_FIELD = re.compile(
+    r"(executable|spread_aware|spread_cost|net_return|straddle_pnl|straddle_return"
+    r"|tradeable|tradable|nbbo|alpha)", re.I)
 
 PROHIBITED_FIELD = re.compile(
     r"(realized|return|post_?event|outcome|pnl|profit|order|position|fill|trade_id)", re.I)
@@ -83,8 +158,23 @@ def credential_presence(env=None):
 
 
 def options_provider(env=None):
-    """Prefer real-time Tradier; else sandbox with the delayed label; else none."""
+    """Deterministic, single-shot provider selection. There is no silent fallback.
+
+    Provider Amendment 1 makes Alpaca Paper Only the initial options-data provider.
+    A provider that is selected and then FAILS is never retried against another
+    provider -- the caller stops. Selection happens once, before any request, and is
+    always reported.
+    """
     e = os.environ if env is None else env
+    kid = (e.get("APCA_API_KEY_ID") or "").strip()
+    sec = (e.get("APCA_API_SECRET_KEY") or "").strip()
+    if kid and sec:
+        return ("alpaca", ALPACA_DATA_BASE, ALPACA_LABEL, "APCA_API_KEY_ID")
+    if kid or sec:
+        # Half a credential pair is a configuration error, not an invitation to
+        # quietly use a different provider.
+        raise Refused("exactly one Alpaca variable is set; both are required and no "
+                      "other provider is substituted")
     if (e.get("TRADIER_TOKEN") or "").strip():
         return ("tradier", "https://api.tradier.com", REALTIME_LABEL, "TRADIER_TOKEN")
     if (e.get("TRADIER_SANDBOX_TOKEN") or "").strip():
@@ -174,6 +264,323 @@ def straddle_cost(call_ask, put_ask, underlying_price):
     return (call_ask + put_ask) / underlying_price
 
 
+# ---------------------------------------------------------------- Alpaca layer
+#
+# Provider Amendment 1. Market data ONLY. There is no account, position, order or
+# trading code path here, and the guard below fails CLOSED: a URL must be on the
+# allowlist to be requested at all, rather than merely not on a blocklist.
+
+def assert_market_data_endpoint(url):
+    """Fail closed. Only https market-data paths on the Alpaca data host may be used."""
+    p = urllib.parse.urlsplit(str(url))
+    if p.scheme != "https":
+        raise Refused("non-https endpoint refused: %r" % (p.scheme,))
+    if (p.hostname or "").lower() != ALPACA_DATA_HOST:
+        raise Refused("host is not on the market-data allowlist: %r" % (p.hostname,))
+    if ALPACA_FORBIDDEN_ENDPOINT.search(str(url)):
+        raise Refused("order/trading/account endpoint refused: %s" % (p.path,))
+    if not any(p.path.startswith(pre) for pre in ALPACA_ALLOWED_PATH_PREFIXES):
+        raise Refused("path is not on the market-data allowlist: %s" % (p.path,))
+    return True
+
+
+def alpaca_credential_presence(env=None):
+    """PRESENCE ONLY, for the two approved variables. Never a value or a length."""
+    e = os.environ if env is None else env
+    return {v: bool((e.get(v) or "").strip()) for v in ALPACA_CRED_VARS}
+
+
+def alpaca_auth_headers(env=None):
+    """Read credentials ONLY from the two approved environment variables.
+
+    The returned mapping is passed straight to urllib and is never printed, logged,
+    serialized, hashed or stored.
+    """
+    e = os.environ if env is None else env
+    kid = (e.get("APCA_API_KEY_ID") or "").strip()
+    sec = (e.get("APCA_API_SECRET_KEY") or "").strip()
+    if not kid or not sec:
+        raise Refused("Alpaca credentials absent; no request issued and no other "
+                      "provider substituted")
+    return {"APCA-API-KEY-ID": kid, "APCA-API-SECRET-KEY": sec,
+            "Accept": "application/json"}
+
+
+def alpaca_get(path, params=None, env=None, timeout=45, opener=None):
+    """One authenticated market-data GET. Returns (status, raw_bytes).
+
+    Never prints a response body, a header or a price. A failure is returned to the
+    caller, which STOPS; it is never retried against a different provider.
+    """
+    url = ALPACA_DATA_BASE + path
+    if params:
+        url += "?" + urllib.parse.urlencode(params)
+    assert_market_data_endpoint(url)
+    req = urllib.request.Request(url, headers=alpaca_auth_headers(env), method="GET")
+    send = opener or urllib.request.urlopen
+    try:
+        with send(req, timeout=timeout) as r:
+            return (getattr(r, "status", 200), r.read())
+    except urllib.error.HTTPError as e:
+        return (e.code, e.read() or b"")
+
+
+# ------------------------------------------------------------ OCC symbol identity
+
+def parse_occ_symbol(sym):
+    """Contract identity from the OCC symbol: root, expiration, type, strike."""
+    s = str(sym or "").strip().upper()
+    if (len(s) < 16 or not s[-8:].isdigit() or s[-9] not in "CP"
+            or not s[-15:-9].isdigit() or not s[:-15].isalnum()):
+        raise Refused("unparseable OCC option symbol: %r" % (sym,))
+    root, ymd, cp, strike = s[:-15], s[-15:-9], s[-9], s[-8:]
+    exp = "20%s-%s-%s" % (ymd[0:2], ymd[2:4], ymd[4:6])
+    try:
+        date.fromisoformat(exp)
+    except ValueError:
+        raise Refused("OCC symbol carries an impossible expiration: %r" % (sym,))
+    return {"root": root, "expiration_date": exp,
+            "option_type": "call" if cp == "C" else "put",
+            "strike": int(strike) / 1000.0}
+
+
+def parse_rfc3339(ts):
+    """Alpaca stamps nanoseconds; datetime accepts at most microseconds."""
+    s = str(ts or "").strip()
+    if not s:
+        raise Refused("missing timestamp; provenance is mandatory")
+    s = s.replace("Z", "+00:00")
+    m = re.match(r"^(.*?\.\d{1,6})\d*((?:[+-]\d{2}:\d{2})?)$", s)
+    if m:
+        s = m.group(1) + (m.group(2) or "+00:00")
+    try:
+        d = datetime.fromisoformat(s)
+    except ValueError:
+        raise Refused("unparseable timestamp: %r" % (ts,))
+    return d if d.tzinfo else d.replace(tzinfo=timezone.utc)
+
+
+def utc_second_stamp(dt):
+    return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+# --------------------------------------------------------------- chain adapter
+
+def alpaca_snapshot_rows(payload):
+    """Map an Alpaca options-snapshot payload onto the frozen internal chain schema.
+
+    Field NAMES are translated; nothing is invented. A value Alpaca does not supply
+    stays None so that its absence is visible rather than silently imputed. The
+    frozen selection and arithmetic functions then run unchanged on these rows.
+    """
+    if not isinstance(payload, dict) or not isinstance(payload.get("snapshots"), dict):
+        raise Refused("%s: response has no 'snapshots' object" % SCHEMA_INCOMPATIBLE_STATUS)
+    rows = []
+    for sym, s in payload["snapshots"].items():
+        meta = parse_occ_symbol(sym)
+        s = s or {}
+        q = s.get("latestQuote") or {}
+        t = s.get("latestTrade") or {}
+        bar = s.get("dailyBar") or {}
+        rows.append({
+            "occ_symbol": str(sym).upper(),
+            "expiration_date": meta["expiration_date"],
+            "option_type": meta["option_type"],
+            "strike": meta["strike"],
+            "bid": _num(q.get("bp")),
+            "ask": _num(q.get("ap")),
+            "quote_timestamp": q.get("t"),
+            "last": _num(t.get("p")),
+            "volume": _num(bar.get("v")),
+            # Alpaca's options snapshot does not carry open interest; it stays None.
+            "open_interest": _num(s.get("openInterest")),
+            "iv": _num(s.get("impliedVolatility")),
+        })
+    return rows
+
+
+def alpaca_schema_report(rows):
+    """Field presence counts only. Never a price, never a body."""
+    fields = ("expiration_date", "option_type", "strike", "bid", "ask",
+              "quote_timestamp", "last", "volume", "open_interest", "iv")
+    n = len(rows)
+    present = {f: sum(1 for r in rows if r.get(f) not in (None, "")) for f in fields}
+    # The frozen calculation needs identity + bid/ask + a quote timestamp. Nothing else.
+    required = ("expiration_date", "option_type", "strike", "bid", "ask",
+                "quote_timestamp")
+    implementable = bool(n) and all(present[f] > 0 for f in required)
+    return {"contracts": n, "field_presence": present,
+            "fields_required_by_frozen_arithmetic": list(required),
+            "frozen_arithmetic_implementable": implementable,
+            "fields_absent_from_provider": sorted(f for f in fields if present[f] == 0)}
+
+
+# -------------------------------------------------------------- refusal rules
+
+def assert_leg_usable(row, kind, now_utc=None,
+                      max_staleness=MAX_QUOTE_STALENESS_SECONDS):
+    """Missing, degenerate, crossed, stale or future-dated legs are REFUSED.
+
+    A zero or negative ask is treated as a MISSING market, not as a price. The
+    indicative feed publishes empty two-sided quotes and they are not repaired.
+    """
+    bid, ask = _num(row.get("bid")), _num(row.get("ask"))
+    if bid is None or ask is None:
+        raise Refused("%s leg missing bid or ask; last-price substitution is "
+                      "prohibited" % kind)
+    if ask <= 0:
+        raise Refused("%s leg has a non-positive ask -- treated as a MISSING market, "
+                      "never repaired" % kind)
+    if bid < 0:
+        raise Refused("%s leg has a negative bid" % kind)
+    if bid > ask:
+        raise Refused("%s leg crossed market: bid %s > ask %s" % (kind, bid, ask))
+    q = parse_rfc3339(row.get("quote_timestamp"))
+    now = now_utc or datetime.now(timezone.utc)
+    age = (now - q).total_seconds()
+    if age > max_staleness:
+        raise Refused("%s leg quote is stale by %.0fs (limit %ds)"
+                      % (kind, age, max_staleness))
+    if age < -60:
+        raise Refused("%s leg quote timestamp is in the future -- internally "
+                      "inconsistent" % kind)
+    return q
+
+
+def assert_legs_contemporaneous(call_ts, put_ts,
+                                max_divergence=MAX_LEG_DIVERGENCE_SECONDS):
+    """A straddle midpoint from two non-contemporaneous quotes is meaningless."""
+    gap = abs((call_ts - put_ts).total_seconds())
+    if gap > max_divergence:
+        raise Refused("call and put quotes diverge by %.0fs (limit %ds) -- internally "
+                      "inconsistent straddle" % (gap, max_divergence))
+    return True
+
+
+def assert_internally_consistent(rec):
+    """Cross-field checks that no single-field rule would catch."""
+    if rec.get("call_mid") is not None and rec.get("call_bid") is not None:
+        if not (rec["call_bid"] <= rec["call_mid"] <= rec["call_ask"]):
+            raise Refused("call midpoint lies outside its own bid/ask")
+    if rec.get("put_mid") is not None and rec.get("put_bid") is not None:
+        if not (rec["put_bid"] <= rec["put_mid"] <= rec["put_ask"]):
+            raise Refused("put midpoint lies outside its own bid/ask")
+    m = rec.get("midpoint_implied_move")
+    if m is None or not (m == m) or m <= 0:
+        raise Refused("implied move is missing, non-finite or non-positive")
+    if m >= 1.0:
+        raise Refused("implied move of %.3f exceeds 100%% of the underlying -- "
+                      "internally inconsistent" % m)
+    exp = date.fromisoformat(str(rec["expiration"]))
+    ev = date.fromisoformat(str(rec["event_date"]))
+    if exp <= ev:
+        raise Refused("expiration is not strictly after the event date")
+    if rec.get("contract_symbol_call") and rec.get("contract_symbol_put"):
+        for sym, kind in ((rec["contract_symbol_call"], "call"),
+                          (rec["contract_symbol_put"], "put")):
+            meta = parse_occ_symbol(sym)
+            if meta["option_type"] != kind:
+                raise Refused("contract symbol %r is not a %s" % (sym, kind))
+            if abs(meta["strike"] - float(rec["strike"])) > 1e-9:
+                raise Refused("contract symbol strike disagrees with the record")
+            if meta["expiration_date"] != str(rec["expiration"]):
+                raise Refused("contract symbol expiration disagrees with the record")
+    return True
+
+
+def assert_in_snapshot_window(now_et, event_date, session,
+                              tolerance_minutes=SNAPSHOT_WINDOW_TOLERANCE_MINUTES):
+    """Refuse any capture outside the frozen 15:45 ET window on the correct day."""
+    want = snapshot_date_for(event_date, session)
+    if now_et.date().isoformat() != want:
+        raise Refused("wrong snapshot day: %s is not the required %s"
+                      % (now_et.date().isoformat(), want))
+    hh, mm = SNAPSHOT_TARGET_ET.split(":")
+    target = now_et.replace(hour=int(hh), minute=int(mm), second=0, microsecond=0)
+    off = abs((now_et - target).total_seconds()) / 60.0
+    if off > tolerance_minutes:
+        raise Refused("outside the frozen %s ET window by %.1f min (tolerance %d)"
+                      % (SNAPSHOT_TARGET_ET, off, tolerance_minutes))
+    return True
+
+
+def resolve_feed(provider, latency_label, feed=None, feed_designation=None):
+    """Provider AND feed provenance are mandatory. Alpaca's label is not optional."""
+    p = str(provider or "")
+    if not p:
+        raise Refused("provider is mandatory provenance")
+    if p.startswith("alpaca"):
+        f = feed or ALPACA_OPTIONS_FEED
+        d = feed_designation or ALPACA_LABEL
+        if f != ALPACA_OPTIONS_FEED or d != ALPACA_LABEL:
+            raise Refused("every Alpaca record must be feed %r labelled %s"
+                          % (ALPACA_OPTIONS_FEED, ALPACA_LABEL))
+        return f, d
+    d = feed_designation or latency_label
+    if not d:
+        raise Refused("feed designation is mandatory provenance")
+    return (feed or p), d
+
+
+def assert_provider_provenance(rec):
+    """No record without provider AND feed provenance may be stored."""
+    for f in ("provider", "feed", "feed_designation"):
+        if not str(rec.get(f) or "").strip():
+            raise Refused("missing mandatory provenance field %r" % (f,))
+    if str(rec["provider"]).startswith("alpaca"):
+        if rec.get("feed") != ALPACA_OPTIONS_FEED:
+            raise Refused("Alpaca record declares feed %r" % (rec.get("feed"),))
+        if rec.get("feed_designation") != ALPACA_LABEL:
+            raise Refused("every Alpaca record must carry %s" % ALPACA_LABEL)
+    return True
+
+
+def assert_research_grade(rec):
+    """System-validation data can never enter the prospective research panel."""
+    if rec.get("data_class") != RESEARCH_CLASS:
+        raise Refused("data_class %r may not enter the research panel"
+                      % (rec.get("data_class"),))
+    for v in rec.values():
+        if isinstance(v, str) and SYSTEM_VALIDATION_LABEL in v:
+            raise Refused("%s data is barred from the research panel"
+                          % SYSTEM_VALIDATION_LABEL)
+    return True
+
+
+def assert_no_executable_claim(rec):
+    """Amendment 1: the execution-economics stage is deferred on the indicative feed.
+
+    No executable price, spread-aware alpha or realized-straddle-P&L field may be
+    emitted while the provider is Alpaca's indicative feed.
+    """
+    if str(rec.get("provider") or "").startswith("alpaca"):
+        bad = sorted(k for k in rec if EXECUTABLE_CLAIM_FIELD.search(k))
+        if bad:
+            raise Refused("%s: executable / spread-aware / straddle-P&L fields are "
+                          "prohibited on indicative records: %s"
+                          % (DEFERRED_EXECUTION_STATUS, bad))
+        if rec.get("execution_economics_status") != DEFERRED_EXECUTION_STATUS:
+            raise Refused("an indicative record must declare %s"
+                          % DEFERRED_EXECUTION_STATUS)
+    return True
+
+
+# ------------------------------------------------------------ provenance ledger
+
+def append_provenance(rec, path=None):
+    """Append-only ledger for non-research provenance. Never the research panel."""
+    path = path or PROVENANCE_LEDGER
+    if rec.get("data_class") == RESEARCH_CLASS:
+        raise Refused("a research record belongs in the manifest, not the "
+                      "provenance ledger")
+    if Path(path).name == Path(MANIFEST).name:
+        raise Refused("the provenance ledger may not be the research manifest")
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    with Path(path).open("a", encoding="utf-8", newline="\n") as fh:
+        fh.write(json.dumps(rec, sort_keys=True) + "\n")
+    return True
+
+
 # ------------------------------------------------------------------ eligibility
 
 def snapshot_date_for(event_date, session):
@@ -240,16 +647,28 @@ def existing_identities(path=MANIFEST):
 def build_record(*, ticker, issuer_name, event_date, session, underlying_price, chain,
                  expirations, quote_timestamp_utc, provider, latency_label,
                  raw_sha256, search_features, universe_source_kind,
-                 snapshot_timestamp_utc=None):
-    """Assemble one sanitized manifest record, refusing anything that breaks a rule."""
+                 snapshot_timestamp_utc=None, feed=None, feed_designation=None,
+                 request_timestamp_utc=None, response_status=None,
+                 underlying_price_source=None):
+    """Assemble one sanitized manifest record, refusing anything that breaks a rule.
+
+    The frozen contract-selection and implied-move arithmetic below is UNCHANGED by
+    Provider Amendment 1: nearest expiration strictly after the event, strike nearest
+    the contemporaneous underlying, midpoints from bid/ask only. Only provenance
+    fields were added, and on the indicative feed the executable straddle cost is
+    withheld because that stage is deferred.
+    """
     assert_pre_announcement(quote_timestamp_utc, event_date, session)
     exp = first_expiration_after(expirations, event_date)
     at_exp = [o for o in chain if str(o.get("expiration_date")) == exp]
     if not at_exp:
         raise Refused(f"no chain rows for expiration {exp}")
     k = nearest_strike(at_exp, underlying_price)
-    c = quote_fields(leg(at_exp, k, "call"), "call")
-    p = quote_fields(leg(at_exp, k, "put"), "put")
+    call_row, put_row = leg(at_exp, k, "call"), leg(at_exp, k, "put")
+    c = quote_fields(call_row, "call")
+    p = quote_fields(put_row, "put")
+    feed, feed_designation = resolve_feed(provider, latency_label, feed,
+                                          feed_designation)
     rec = {
         "schema_version": "1.0",
         "ticker": ticker, "issuer_name": issuer_name,
@@ -260,6 +679,9 @@ def build_record(*, ticker, issuer_name, event_date, session, underlying_price, 
                                        "%Y-%m-%dT%H:%M:%SZ")),
         "quote_timestamp_utc": str(quote_timestamp_utc),
         "provider": provider, "quote_latency_label": latency_label,
+        "feed": feed, "feed_designation": feed_designation,
+        "data_class": RESEARCH_CLASS,
+        "strike_selection_method": STRIKE_SELECTION_METHOD,
         "underlying_price": float(underlying_price),
         "expiration": exp, "strike": float(k), **c, **p,
         "search_window_end": search_window_end(event_date),
@@ -269,17 +691,56 @@ def build_record(*, ticker, issuer_name, event_date, session, underlying_price, 
         "universe_source_kind": universe_source_kind,
         "collected_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
+    if request_timestamp_utc:
+        rec["request_timestamp_utc"] = str(request_timestamp_utc)
+    if response_status is not None:
+        rec["response_status"] = int(response_status)
+    if underlying_price_source:
+        rec["underlying_price_source"] = str(underlying_price_source)
+    if call_row.get("occ_symbol"):
+        rec["contract_symbol_call"] = str(call_row["occ_symbol"])
+    if put_row.get("occ_symbol"):
+        rec["contract_symbol_put"] = str(put_row["occ_symbol"])
+
+    # ---- frozen arithmetic, unchanged --------------------------------------
     rec["midpoint_implied_move"] = implied_move(rec["call_mid"], rec["put_mid"],
                                                 underlying_price)
-    rec["executable_straddle_cost"] = straddle_cost(rec["call_ask"], rec["put_ask"],
-                                                    underlying_price)
+    if str(provider).startswith("alpaca"):
+        # Amendment 1 section 7: deferred, not deleted. No executable price, no
+        # spread cost and no straddle P&L is derived from an indicative quote.
+        rec["execution_economics_status"] = DEFERRED_EXECUTION_STATUS
+    else:
+        rec["executable_straddle_cost"] = straddle_cost(rec["call_ask"],
+                                                        rec["put_ask"],
+                                                        underlying_price)
+
+    # ---- field completeness is disclosed, never imputed ---------------------
+    rec["design_fields_absent"] = sorted(f for f in DESIGN_RECORDED_FIELDS
+                                         if rec.get(f) is None)
+    missing = [f for f in MANDATORY_RECORD_FIELDS if rec.get(f) in (None, "")]
+    rec["all_necessary_fields_present"] = not missing
+    if missing:
+        raise Refused(f"necessary field(s) missing: {sorted(missing)}; the record is "
+                      "refused, not repaired")
+
     rec["record_id"] = record_id(rec)
     assert_no_prohibited_fields(rec)
+    assert_provider_provenance(rec)
+    assert_no_executable_claim(rec)
+    assert_internally_consistent(rec)
     return rec
 
 
 def append_record(rec, path=MANIFEST):
-    """Append-only. A duplicate identity is refused, never overwritten."""
+    """Append-only research panel. A duplicate identity is refused, never overwritten.
+
+    Every gate is re-applied here, so a record cannot reach the panel by being built
+    somewhere other than build_record.
+    """
+    assert_no_prohibited_fields(rec)
+    assert_provider_provenance(rec)
+    assert_research_grade(rec)
+    assert_no_executable_claim(rec)
     ident = (rec["ticker"], rec["event_date"], rec["provider"], rec["quote_timestamp_utc"])
     if ident in existing_identities(path):
         raise Refused(f"duplicate identity refused: {ident}")
@@ -314,13 +775,25 @@ def mode_doctor(argv=None):
     print(f"  raw cache (repository-external) {CACHE}")
     print(f"  manifest                      {MANIFEST.relative_to(ROOT)}"
           f" ({'present' if MANIFEST.exists() else 'not yet created'})")
+    if prov == "alpaca":
+        print("\nPROVIDER AMENDMENT 1 (2026-08-17) IN FORCE:")
+        print("  options feed                 " + ALPACA_OPTIONS_FEED)
+        print("  mandatory record label       " + ALPACA_LABEL)
+        print("  consolidated OPRA data       NO -- trades may be delayed, quotes are")
+        print("                               modified/indicative, not the NBBO")
+        print("  execution-economics stage    " + DEFERRED_EXECUTION_STATUS)
+        print("  permitted use                magnitude forecasting vs an options-implied")
+        print("                               benchmark")
+        print("  prohibited use               executable bids/asks, spread costs,")
+        print("                               straddle P&L, tradeable options alpha")
+        print("  endpoints                    market data only; order/trading/account")
+        print("                               endpoints fail closed")
     if not prov:
         print("\nSETUP REQUIRED for options snapshots -- no website is substituted:")
-        print("  1. Create a Tradier developer account (https://developer.tradier.com/).")
-        print("  2. For delayed sandbox data, set TRADIER_SANDBOX_TOKEN.")
-        print("     Records will be labelled DELAYED_15_MINUTES.")
-        print("  3. For real-time data, obtain market-data entitlement and set TRADIER_TOKEN.")
-        print("  4. Re-run: python tools/collect_attention_options_snapshot.py doctor")
+        print("  1. Set APCA_API_KEY_ID and APCA_API_SECRET_KEY (Alpaca Paper Only).")
+        print("  2. Tradier stays unavailable until a legitimately-owned brokerage")
+        print("     account exists; no fabricated identity or third-party SSN is used.")
+        print("  3. Re-run: python tools/collect_attention_options_snapshot.py doctor")
     return 0
 
 
@@ -367,23 +840,113 @@ def mode_calendar(argv=None):
 
 
 def mode_snapshot(argv):
+    """Capture one prospective pre-event input snapshot, or refuse.
+
+    Every gate is checked BEFORE any request: provider selection, the frozen 15:45 ET
+    window on the correct snapshot day, and confirmed event timing. Nothing here
+    computes a return, opens a post-event price, or touches an order endpoint.
+    """
     ap = argparse.ArgumentParser(prog="snapshot")
     ap.add_argument("--ticker", required=True)
     ap.add_argument("--issuer", required=True)
     ap.add_argument("--event-date", required=True)
     ap.add_argument("--session", required=True, choices=["AMC", "BMO", "amc", "bmo"])
+    ap.add_argument("--timing-confirmed", default=None,
+                    help="issuer release or SEC filing URL confirming date AND session")
     a = ap.parse_args(argv)
-    prov, base, label, var = options_provider()
+    session = a.session.upper()
+    try:
+        prov, base, label, var = options_provider()
+    except Refused as e:
+        print("SNAPSHOT REFUSED:", redact(e))
+        return 2
     if not prov:
-        print("SNAPSHOT REFUSED: no Tradier credential present.")
+        print("SNAPSHOT REFUSED: no options-provider credential present.")
         print("No website is scraped as a substitute. Run `doctor` for setup steps.")
         return 2
+
     now_et = datetime.now(ET)
-    print(f"SNAPSHOT: provider={prov} latency={label} now_et={now_et:%Y-%m-%d %H:%M} "
-          f"target={SNAPSHOT_TARGET_ET} ET")
-    print("  live snapshot capture is gated on the prescribed timing window; this build "
-          "performs no out-of-window capture.")
-    return 3
+    print(f"SNAPSHOT: provider={prov} feed="
+          f"{ALPACA_OPTIONS_FEED if prov == 'alpaca' else prov} "
+          f"now_et={now_et:%Y-%m-%d %H:%M} target={SNAPSHOT_TARGET_ET} ET")
+
+    try:
+        assert_in_snapshot_window(now_et, a.event_date, session)
+    except Refused as e:
+        print("  REFUSED (window):", redact(e))
+        print("  No out-of-window capture is performed and no historical observation "
+              "is manufactured.")
+        return 3
+
+    if not a.timing_confirmed:
+        print("  REFUSED (timing): vendor calendar dates are "
+              f"{SCHEDULING_LABEL}. Pass --timing-confirmed with an issuer release or "
+              "SEC filing that fixes BOTH the date and the AMC/BMO session.")
+        return 3
+
+    if prov != "alpaca":
+        print("  REFUSED: Provider Amendment 1 makes Alpaca the options provider; "
+              "no other provider is silently substituted.")
+        return 2
+
+    sym = a.ticker.upper()
+    req_ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    try:
+        u_status, u_raw = alpaca_get(f"/v2/stocks/{sym}/trades/latest",
+                                     {"feed": ALPACA_STOCK_FEED})
+        if u_status != 200:
+            print(f"  REFUSED: underlying price request returned {u_status}. "
+                  "Stopping; no other provider is tried.")
+            return 1
+        px = _num(((json.loads(u_raw.decode("utf-8", "replace")).get("trade")) or {})
+                  .get("p"))
+        if px is None or px <= 0:
+            raise Refused("no usable underlying price")
+        ev = date.fromisoformat(str(a.event_date))
+        o_status, o_raw = alpaca_get(ALPACA_OPTIONS_SNAPSHOT_PATH + sym,
+                                     {"feed": ALPACA_OPTIONS_FEED, "limit": 1000,
+                                      "expiration_date_gte":
+                                          (ev + timedelta(days=1)).isoformat(),
+                                      "expiration_date_lte":
+                                          (ev + timedelta(days=45)).isoformat()})
+        if o_status != 200:
+            print(f"  REFUSED: option chain request returned {o_status}. "
+                  "Stopping; no other provider is tried and no website is scraped.")
+            return 1
+        rows = alpaca_snapshot_rows(json.loads(o_raw.decode("utf-8", "replace")))
+        exp = first_expiration_after({r["expiration_date"] for r in rows}, a.event_date)
+        at_exp = [r for r in rows if r["expiration_date"] == exp]
+        k = nearest_strike(at_exp, px)
+        c_row, p_row = leg(at_exp, k, "call"), leg(at_exp, k, "put")
+        now_utc = datetime.now(timezone.utc)
+        c_ts = assert_leg_usable(c_row, "call", now_utc)
+        p_ts = assert_leg_usable(p_row, "put", now_utc)
+        assert_legs_contemporaneous(c_ts, p_ts)
+        rec = build_record(
+            ticker=sym, issuer_name=a.issuer, event_date=a.event_date,
+            session=session, underlying_price=px, chain=at_exp,
+            expirations={r["expiration_date"] for r in rows},
+            quote_timestamp_utc=utc_second_stamp(max(c_ts, p_ts)),
+            provider="alpaca", latency_label=ALPACA_LABEL,
+            feed=ALPACA_OPTIONS_FEED, feed_designation=ALPACA_LABEL,
+            raw_sha256=sha256_bytes(o_raw), search_features=[],
+            universe_source_kind=(_committed_universe() or {}).get(
+                "source_kind", "UNKNOWN"),
+            request_timestamp_utc=req_ts, response_status=o_status,
+            underlying_price_source=f"alpaca:{ALPACA_STOCK_FEED}")
+        CACHE.mkdir(parents=True, exist_ok=True)
+        (CACHE / f"alpaca_chain_{sym}_{a.event_date}.json").write_bytes(o_raw)
+        rid = append_record(rec)
+    except Refused as e:
+        print("  REFUSED:", redact(e))
+        return 3
+    except Exception as e:                                    # noqa: BLE001
+        print("  ERROR:", redact(f"{type(e).__name__}: {e}"))
+        return 1
+    print(f"  RECORDED record_id={rid} expiration={rec['expiration']} "
+          f"strike={rec['strike']} label={rec['feed_designation']}")
+    print("  raw body kept repository-external; only sanitized fields were committed.")
+    return 0
 
 
 def mode_validate(argv=None):
@@ -399,6 +962,9 @@ def mode_validate(argv=None):
         r = json.loads(line)
         try:
             assert_no_prohibited_fields(r)
+            assert_provider_provenance(r)
+            assert_research_grade(r)
+            assert_no_executable_claim(r)
             assert_pre_announcement(r["quote_timestamp_utc"], r["event_date"],
                                     r["announcement_session"])
             if r["record_id"] != record_id(r):
@@ -422,15 +988,380 @@ def mode_validate(argv=None):
     return 1 if bad else 0
 
 
+def mode_alpaca_check(argv=None):
+    """ONE minimal Alpaca connectivity + schema-validation request.
+
+    Marked NON_EVENT_SYSTEM_VALIDATION_ONLY. It is written to the provenance ledger,
+    never to the research manifest, and it can never become a study observation. No
+    response body and no option price is printed.
+    """
+    ap = argparse.ArgumentParser(prog="alpaca-check")
+    ap.add_argument("--symbol", default="AAPL",
+                    help="system-validation underlying; NOT a study observation")
+    a = ap.parse_args(list(argv or []))
+    print("ALPACA CONNECTIVITY / SCHEMA VALIDATION  [" + SYSTEM_VALIDATION_LABEL + "]")
+    pres = alpaca_credential_presence()
+    for k, v in pres.items():
+        print(f"  {k:<24} {'PRESENT' if v else 'ABSENT'}")
+    if not all(pres.values()):
+        print("  REFUSED: both approved variables are required. No request issued and "
+              "no other provider substituted.")
+        return 2
+
+    req_ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    path = ALPACA_OPTIONS_SNAPSHOT_PATH + a.symbol.upper()
+    try:
+        status, raw = alpaca_get(path, {"feed": ALPACA_OPTIONS_FEED, "limit": 25})
+    except Refused as e:
+        print("  REFUSED:", redact(e))
+        return 2
+    except Exception as e:                                    # noqa: BLE001
+        print("  TRANSPORT ERROR:", redact(f"{type(e).__name__}: {e}"))
+        return 1
+
+    CACHE.mkdir(parents=True, exist_ok=True)
+    raw_path = CACHE / "alpaca_system_validation.json"
+    raw_path.write_bytes(raw)
+    digest = sha256_bytes(raw)
+    print(f"  request_timestamp_utc    {req_ts}")
+    print(f"  endpoint                 {ALPACA_OPTIONS_SNAPSHOT_PATH}<underlying>"
+          "   (market data only)")
+    print(f"  feed                     {ALPACA_OPTIONS_FEED}")
+    print(f"  feed_designation         {ALPACA_LABEL}")
+    print(f"  response_status          {status}")
+    print(f"  response_bytes           {len(raw):,}")
+    print(f"  response_sha256          {digest}")
+    print(f"  raw body kept repository-external, never committed: {raw_path}")
+
+    rec = {
+        "data_class": VALIDATION_CLASS, "record_type": "provider_connectivity_check",
+        "label": SYSTEM_VALIDATION_LABEL, "provider": "alpaca",
+        "feed": ALPACA_OPTIONS_FEED, "feed_designation": ALPACA_LABEL,
+        "request_timestamp_utc": req_ts,
+        "endpoint": ALPACA_OPTIONS_SNAPSHOT_PATH + "<underlying>",
+        "response_status": int(status), "response_bytes": len(raw),
+        "response_sha256": digest, "entered_research_panel": False,
+        "may_be_used_as_a_study_observation": False,
+    }
+
+    if status != 200:
+        # Distinguish "credentials rejected" from "no options entitlement" with one
+        # further MARKET-DATA request. Statuses only; no credential detail is derived,
+        # printed or stored, and no other provider is tried either way.
+        eq_status = None
+        try:
+            eq_status, _eq_raw = alpaca_get("/v2/stocks/AAPL/trades/latest",
+                                            {"feed": ALPACA_STOCK_FEED})
+        except Exception:                                     # noqa: BLE001
+            eq_status = None
+        if status in (401, 403) and eq_status in (401, 403):
+            diag = "CREDENTIALS_REJECTED_BY_PROVIDER"
+            print("  AUTHENTICATION FAILED. Equity market data returns "
+                  f"{eq_status} as well, so the credential pair itself is rejected -- "
+                  "this is not an options-entitlement problem.")
+        elif status in (401, 403):
+            diag = "OPTIONS_FEED_NOT_ENTITLED"
+            print(f"  Equity market data returns {eq_status} but options returns "
+                  f"{status}: the credentials work and the options feed is not "
+                  "entitled.")
+        else:
+            diag = "PROVIDER_ERROR"
+            print(f"  Provider returned {status}.")
+        print("  STOPPING. No fallback provider is tried, no website is scraped, and "
+              "no observation is manufactured.")
+        rec["outcome"] = "AUTH_OR_ENTITLEMENT_FAILED"
+        rec["diagnosis"] = diag
+        rec["equity_market_data_status"] = eq_status
+        append_provenance(rec)
+        return 1
+
+    try:
+        rows = alpaca_snapshot_rows(json.loads(raw.decode("utf-8", "replace")))
+    except Refused as e:
+        print("  SCHEMA REFUSED:", redact(e))
+        rec["outcome"] = SCHEMA_INCOMPATIBLE_STATUS
+        append_provenance(rec)
+        return 1
+
+    rep_ = alpaca_schema_report(rows)
+    print(f"  contracts returned       {rep_['contracts']}")
+    print("  field presence (counts only -- no values, no prices):")
+    for f, n in sorted(rep_["field_presence"].items()):
+        print(f"    {f:<20} {n}/{rep_['contracts']}")
+    print(f"  fields absent from feed  {rep_['fields_absent_from_provider'] or 'none'}")
+    ok = rep_["frozen_arithmetic_implementable"]
+    print("  frozen contract-selection + implied-move arithmetic implementable: "
+          + ("YES" if ok else "NO -> " + SCHEMA_INCOMPATIBLE_STATUS))
+    rec.update({"contracts_returned": rep_["contracts"],
+                "field_presence": rep_["field_presence"],
+                "fields_absent_from_provider": rep_["fields_absent_from_provider"],
+                "fields_required_by_frozen_arithmetic":
+                    rep_["fields_required_by_frozen_arithmetic"],
+                "frozen_arithmetic_implementable": ok,
+                "outcome": "OK" if ok else SCHEMA_INCOMPATIBLE_STATUS})
+    append_provenance(rec)
+    if not ok:
+        print("  STOPPING with " + SCHEMA_INCOMPATIBLE_STATUS
+              + ": the frozen formulas are not altered to accommodate a provider.")
+        return 1
+    return 0
+
+
+# ------------------------------------------------------------------- universe
+
+ISSUER_NOISE = re.compile(
+    r"\b(class\s+[a-c]|common\s+stock|ordinary\s+shares?|shares?|capital\s+stock"
+    r"|inc|incorporated|corp|corporation|co|company|plc|ltd|limited|holdings?|group"
+    r"|the|nv|sa|ag)\b", re.I)
+
+
+def issuer_key(name, ticker):
+    """Collapse multi-class listings of one issuer onto a single key."""
+    n = ISSUER_NOISE.sub(" ", str(name or ""))
+    n = re.sub(r"[^a-z0-9]+", "", n.lower())
+    return n or str(ticker or "").upper()
+
+
+def _universe_from_json(raw):
+    """Official Nasdaq constituent JSON. Identity fields only."""
+    d = json.loads(raw.decode("utf-8", "replace"))
+    node = d.get("data") or {}
+    rows = (node.get("data") or {}).get("rows") if isinstance(node.get("data"), dict) \
+        else node.get("rows")
+    if not rows:
+        raise Refused("official constituent JSON carried no rows")
+    out = []
+    for r in rows:
+        t = str(r.get("symbol") or r.get("ticker") or "").strip().upper()
+        n = str(r.get("companyName") or r.get("name") or "").strip()
+        if t:
+            out.append({"ticker": t, "issuer_name": n})
+    return out
+
+
+def _universe_from_csv(raw):
+    """Official Invesco QQQ holdings CSV. Weights and market values are DROPPED."""
+    text = raw.decode("utf-8-sig", "replace")
+    rows = list(csv.reader(io.StringIO(text)))
+    tick_names = ("holding ticker", "ticker", "symbol", "holdingticker")
+    name_names = ("name", "security name", "holding name", "description")
+    for i, r in enumerate(rows[:10]):
+        low = [c.strip().lower() for c in r]
+        ti = next((low.index(x) for x in tick_names if x in low), None)
+        if ti is None:
+            continue
+        ni = next((low.index(x) for x in name_names if x in low), None)
+        out = []
+        for c in rows[i + 1:]:
+            if len(c) <= ti:
+                continue
+            t = c[ti].strip().upper()
+            n = c[ni].strip() if ni is not None and len(c) > ni else ""
+            if t and t.replace(".", "").replace("-", "").isalnum():
+                out.append({"ticker": t, "issuer_name": n})
+        if out:
+            return out
+    raise Refused("official holdings file had no recognisable ticker column")
+
+
+def mode_universe(argv=None):
+    """Retrieve the universe from the frozen official source hierarchy only.
+
+    Nasdaq-100 official constituents first; the official Invesco QQQ holdings file as
+    the DISCLOSED index proxy if the first is inaccessible. Only the two official
+    sources in UNIVERSE_SOURCES are ever requested; scraped, aggregator, generated and
+    remembered lists have no code path here. Only identity fields are kept -- weights
+    and market values are never retained.
+    """
+    ua = {"User-Agent": "attention-options-dislocation-study/1.0 (research; contact via repo)",
+          "Accept": "*/*"}
+    chosen = None
+    attempts = []
+    for s in UNIVERSE_SOURCES:
+        got_ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        try:
+            status, raw = http_json(s["url"], headers=ua)
+        except urllib.error.HTTPError as e:
+            status, raw = e.code, b""
+        except Exception as e:                                # noqa: BLE001
+            attempts.append((s, None, 0, f"{type(e).__name__}", got_ts))
+            print(f"  rank {s['rank']}: {s['name']}")
+            print(f"    UNREACHABLE ({type(e).__name__}) -- falling through to the next "
+                  "OFFICIAL source only")
+            continue
+        parser = _universe_from_json if s["url"].rstrip("/").endswith("nasdaq100") \
+            else _universe_from_csv
+        try:
+            members = parser(raw)
+        except Exception as e:                                # noqa: BLE001
+            members = []
+            print(f"  rank {s['rank']}: {s['name']}")
+            print(f"    http {status}, {len(raw):,} bytes -- UNPARSEABLE ({redact(e)})")
+            attempts.append((s, status, len(raw), "unparseable", got_ts))
+            continue
+        attempts.append((s, status, len(raw), "ok", got_ts))
+        chosen = (s, status, raw, members, got_ts)
+        break
+
+    print("UNIVERSE RETRIEVAL -- official sources only")
+    if not chosen:
+        print("  NO OFFICIAL SOURCE COULD BE AUTHENTICATED.")
+        print("  Stopping. Scraped, aggregator, generated and remembered lists "
+              "are prohibited by the frozen design and no substitute is used.")
+        return 1
+
+    s, status, raw, members, got_ts = chosen
+    # Deduplicate by issuer; multi-class issuers contribute exactly one issuer.
+    uni, seen_issuer, seen_ticker = [], set(), set()
+    for m in members:
+        key = issuer_key(m["issuer_name"], m["ticker"])
+        if m["ticker"] in seen_ticker or key in seen_issuer:
+            continue
+        seen_ticker.add(m["ticker"])
+        seen_issuer.add(key)
+        uni.append(m)
+
+    digest = sha256_bytes(raw)
+    CACHE.mkdir(parents=True, exist_ok=True)
+    (CACHE / "universe_source_raw").write_bytes(raw)
+    print(f"  source rank              {s['rank']}")
+    print(f"  source name              {s['name']}")
+    print(f"  source kind              {s['kind']}")
+    print(f"  source url               {s['url']}")
+    print(f"  retrieved_utc            {got_ts}")
+    print(f"  response_status          {status}")
+    print(f"  response_bytes           {len(raw):,}")
+    print(f"  response_sha256          {digest}")
+    print(f"  constituents (raw)       {len(members)}")
+    print(f"  constituents (deduped)   {len(uni)}")
+    print("  retained fields          ticker, issuer_name  (weights and market values "
+          "are NOT retained)")
+    if s["kind"] == "OFFICIAL_ETF_HOLDINGS_PROXY":
+        print("  NOTE: this is the DISCLOSED INDEX PROXY, labelled as such everywhere.")
+    append_provenance({
+        "data_class": PROVENANCE_CLASS, "record_type": "universe_snapshot",
+        "source_rank": s["rank"], "source_name": s["name"], "source_url": s["url"],
+        "source_kind": s["kind"], "retrieved_utc": got_ts,
+        "response_status": int(status), "response_bytes": len(raw),
+        "response_sha256": digest,
+        "constituent_count_raw": len(members),
+        "constituent_count_deduplicated_by_issuer": len(uni),
+        "identity_fields_retained": ["ticker", "issuer_name"],
+        "weights_retained": False, "market_values_retained": False,
+        "constituents": sorted(uni, key=lambda m: m["ticker"]),
+    })
+    print(f"  provenance appended      {PROVENANCE_LEDGER.name}")
+    return 0
+
+
+# ------------------------------------------------------------------ readiness
+
+def _committed_universe():
+    """Read the universe back out of the committed provenance ledger."""
+    if not PROVENANCE_LEDGER.exists():
+        return None
+    latest = None
+    for line in PROVENANCE_LEDGER.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        r = json.loads(line)
+        if r.get("record_type") == "universe_snapshot":
+            latest = r
+    return latest
+
+
+def mode_readiness(argv=None):
+    """Universe x calendar readiness. Collects nothing and retrieves no outcome."""
+    uni = _committed_universe()
+    if not uni:
+        print("READINESS: no universe snapshot recorded yet -- run `universe` first.")
+        return 2
+    tickers = {m["ticker"] for m in uni["constituents"]}
+    print("EVENT READINESS")
+    print(f"  universe source          {uni['source_kind']} rank {uni['source_rank']}")
+    print(f"  universe constituents    {len(tickers)}")
+
+    cal = CACHE / "earnings_calendar.csv"
+    if not cal.exists():
+        print("  calendar                 ABSENT -- no candidate events can be listed.")
+        return 2
+    craw = cal.read_bytes()
+    rows = [r for r in craw.decode("utf-8", "replace").splitlines() if r.strip()]
+    idx = {h.strip(): i for i, h in enumerate(rows[0].split(","))} if rows else {}
+    print(f"  calendar source          Alpha Vantage EARNINGS_CALENDAR (dates only)")
+    print(f"  calendar sha256          {sha256_bytes(craw)}")
+    print(f"  calendar timing status   {SCHEDULING_LABEL} -- NOT confirmed event timing")
+
+    today = date.today()
+    horizon = today + timedelta(days=CALENDAR_HORIZON_DAYS)
+    cands = []
+    if "symbol" in idx and "reportDate" in idx:
+        for r in rows[1:]:
+            c = r.split(",")
+            try:
+                sym = c[idx["symbol"]].strip().upper()
+                d = date.fromisoformat(c[idx["reportDate"]].strip())
+            except (ValueError, IndexError):
+                continue
+            if sym in tickers and today <= d <= horizon:
+                cands.append((d, sym))
+    cands.sort()
+    print(f"  candidate events (universe x calendar, next {CALENDAR_HORIZON_DAYS}d): "
+          f"{len(cands)}")
+
+    now_et = datetime.now(ET)
+    print(f"  now (ET)                 {now_et:%Y-%m-%d %H:%M} ET")
+    print(f"  frozen snapshot window   {SNAPSHOT_TARGET_ET} ET "
+          f"(+/- {SNAPSHOT_WINDOW_TOLERANCE_MINUTES} min)")
+
+    if not cands:
+        print("  NO CANDIDATE EVENT. Nothing collected; no historical observation is "
+              "manufactured.")
+        return 0
+
+    print("  next candidate dates (each requires issuer-release or SEC confirmation "
+          "of BOTH the date and the AMC/BMO session):")
+    shown, seen_d = 0, set()
+    for d, sym in cands:
+        if d in seen_d:
+            continue
+        seen_d.add(d)
+        same = sorted(s for dd, s in cands if dd == d)
+        # The AMC/BMO session is NOT supplied by the vendor calendar, so the snapshot
+        # day cannot be fixed yet. Report the earlier of the two possibilities.
+        bmo_day = snapshot_date_for(d.isoformat(), "BMO")
+        print(f"    {d.isoformat()}  n={len(same):<3} session UNCONFIRMED  "
+              f"snapshot day {bmo_day} (if BMO) or {d.isoformat()} (if AMC)  "
+              f"e.g. {', '.join(same[:6])}")
+        shown += 1
+        if shown >= 5:
+            break
+
+    first = cands[0][0]
+    earliest_day = snapshot_date_for(first.isoformat(), "BMO")
+    print(f"  earliest possible required collection time: {earliest_day} "
+          f"{SNAPSHOT_TARGET_ET} ET (only if that event is confirmed BMO)")
+    print(f"  otherwise:                                  {first.isoformat()} "
+          f"{SNAPSHOT_TARGET_ET} ET (if confirmed AMC)")
+    print("  ELIGIBLE NOW: NO -- every candidate still lacks issuer-release or SEC "
+          "confirmation of its date and session, and the frozen window is "
+          f"{SNAPSHOT_TARGET_ET} ET.")
+    print("  Exiting cleanly. No observation collected, no outcome retrieved.")
+    return 0
+
+
 MODES = {"doctor": mode_doctor, "calendar": mode_calendar,
-         "snapshot": mode_snapshot, "validate": mode_validate}
+         "snapshot": mode_snapshot, "validate": mode_validate,
+         "alpaca-check": mode_alpaca_check, "universe": mode_universe,
+         "readiness": mode_readiness}
 
 
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     if not argv or argv[0] not in MODES:
         print("usage: collect_attention_options_snapshot.py "
-              "{doctor|calendar|snapshot|validate} [options]")
+              "{doctor|calendar|alpaca-check|universe|readiness|snapshot|validate} "
+              "[options]")
         return 2
     return MODES[argv[0]](argv[1:])
 
