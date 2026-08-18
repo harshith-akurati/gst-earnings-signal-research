@@ -42,6 +42,9 @@ on:
     paths:
       - "gst_market_response/**"
       - "test_market_response*.py"
+      - "gst_trends_frame_archive.py"
+      - "test_gst_trends_frame_archive.py"
+      - "test_phase2_trends_frame_capture_integration.py"
       - "Event_Dossier_Protocol/**"
       # The HYP-01 feasibility runner is imported by a discovered test file, so
       # a change to it can break the suite. Without this filter that test would
@@ -96,6 +99,12 @@ jobs:
           pip install -r requirements.txt
           pip install -r Event_Dossier_Protocol/validator/requirements.txt
           pip install -r tools/requirements-hyp01-feasibility.txt
+          # pytrends: needed only so test_phase2_trends_frame_capture_integration.py
+          # can import the attention-panel script's frame-archive wiring (a fake
+          # request-shaped stand-in supplies every response; nothing in that test
+          # makes a real network call). Deliberately not added to requirements.txt,
+          # matching that file's own stated scope.
+          pip install pytrends
 
       - name: Discover and run every deterministic market-response test file
         run: |
@@ -112,6 +121,18 @@ jobs:
             echo "=== Running $f ==="
             python "$f"
           done
+
+      - name: Run the GST Trends frame-archive tests
+        # Two separate files, not folded into the market-response glob above
+        # (neither is named test_market_response*.py -- one tests a
+        # standalone archive module with zero network-capable imports, the
+        # other exercises the attention-panel script's archive wiring
+        # against a fake request-shaped object). Zero network calls in
+        # either: every response is constructed locally in-memory.
+        run: |
+          set -e
+          python test_gst_trends_frame_archive.py
+          python test_phase2_trends_frame_capture_integration.py
 
       - name: Run the Event Dossier validator suite (cross-protocol dependency)
         working-directory: Event_Dossier_Protocol/validator
