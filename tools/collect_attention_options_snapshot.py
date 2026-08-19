@@ -96,6 +96,30 @@ STRIKE_SELECTION_METHOD = "NEAREST_STRIKE_TO_CONTEMPORANEOUS_UNDERLYING"
 
 NON_EXECUTABLE_LABELS = frozenset({ALPACA_LABEL, CBOE_LABEL})
 
+# --------------------------------------------------------------------------
+# TRENDS_METHOD_FROZEN (2026-08-19). Every value below was fixed in the ledger
+# BEFORE this code existed and before any Trends request. Nothing here may be
+# retuned after seeing a value.
+# --------------------------------------------------------------------------
+TRENDS_GEO = "US"
+TRENDS_CAT = 0
+TRENDS_GPROP = ""
+TRENDS_CUTOFF = "2026-08-18"
+TRENDS_WINDOW_DAYS = 730
+TRENDS_BASELINE_WEEKS = 52
+TRENDS_ZSCORE_DDOF = 1
+TRENDS_REQUESTS_PER_QUERY_PER_DATE = 1
+TRENDS_RETRY_POLICY = "NONE"
+TRENDS_DIR = Path(r"C:\Users\hakur\Downloads\gst-source-quarantine"
+                  r"\TRENDS_2026-08-20_ROST")
+TRENDS_QUERIES = {"ticker_query": "ROST stock",
+                  "issuer_query": "Ross Stores, Inc. stock"}
+TRENDS_SCHEDULE = {"T-1": "2026-08-19", "T0": "2026-08-20"}
+TRENDS_ATTEMPT_TYPE = "TRENDS_ATTEMPT"
+TRENDS_DAILY_TYPE = "TRENDS_DAILY_COMPOSITE"
+TRENDS_FINAL_TYPE = "TRENDS_EVENT_SCORE"
+TRENDS_STATUS_CAPTURED = "PRE_EVENT_TRENDS_INPUT_CAPTURED"
+
 SCHEDULE_RECORD_TYPE = "PROSPECTIVE_EVENT_SCHEDULE_CONFIRMED"
 SCHEDULE_STATUS = "SCHEDULED_NOT_COLLECTED"
 OFFICIAL_IR_SOURCE = "OFFICIAL_ISSUER_INVESTOR_RELATIONS"
@@ -1273,6 +1297,316 @@ def assert_delayed_display_timing(display_utc, retrieved_utc,
     return True
 
 
+# ------------------------------------------------------- frozen Trends method
+#
+# Implements TRENDS_METHOD_FROZEN exactly. Every parsed response is archived
+# repository-external and hashed BEFORE any z-score is computed, and the z-score
+# is recomputed from the archived file rather than from memory.
+
+def trends_window(cutoff=TRENDS_CUTOFF, days=TRENDS_WINDOW_DAYS):
+    """Retrieval window: exactly `days` calendar days before the cutoff, to the cutoff."""
+    end = date.fromisoformat(str(cutoff))
+    return ((end - timedelta(days=days)).isoformat(), end.isoformat())
+
+
+def trends_timeframe(cutoff=TRENDS_CUTOFF):
+    a, b = trends_window(cutoff)
+    return "%s %s" % (a, b)
+
+
+def assert_in_trends_window(now_et, retrieval_date,
+                            tolerance_minutes=SNAPSHOT_WINDOW_TOLERANCE_MINUTES):
+    """The existing 15:45 ET convention, unchanged and not loosened."""
+    if now_et.date().isoformat() != str(retrieval_date):
+        raise Refused("wrong retrieval day: %s is not the scheduled %s"
+                      % (now_et.date().isoformat(), retrieval_date))
+    hh, mm = SNAPSHOT_TARGET_ET.split(":")
+    target = now_et.replace(hour=int(hh), minute=int(mm), second=0, microsecond=0)
+    off = abs((now_et - target).total_seconds()) / 60.0
+    if off > tolerance_minutes:
+        raise Refused("outside the frozen %s ET window by %.1f min (tolerance %d)"
+                      % (SNAPSHOT_TARGET_ET, off, tolerance_minutes))
+    return True
+
+
+def select_complete_weeks(rows, cutoff=TRENDS_CUTOFF):
+    """Apply the frozen complete-week rule. Refuses rather than repairs.
+
+    `rows` is [(date_iso, value, is_partial)]. Zero is a valid value, not missing.
+    """
+    cut = date.fromisoformat(str(cutoff))
+    if len(rows) < 2:
+        raise Refused("too few rows to establish weekly resolution")
+    kept = []
+    for d, v, partial in rows:
+        if partial:
+            continue                      # rows marked partial are rejected outright
+        if v is None:
+            raise Refused("missing value at %s; no interpolation is permitted" % d)
+        wk = date.fromisoformat(str(d))
+        if wk + timedelta(days=6) <= cut:
+            kept.append((wk, float(v)))
+    kept.sort()
+    if len(kept) < 2:
+        raise Refused("fewer than two complete weeks survive the cutoff")
+    for a, b in zip(kept, kept[1:]):
+        gap = (b[0] - a[0]).days
+        if gap != 7:
+            raise Refused("non-weekly resolution or a missing week: %s -> %s is %d days"
+                          % (a[0], b[0], gap))
+    need = TRENDS_BASELINE_WEEKS + 1
+    if len(kept) < need:
+        raise Refused("need the target plus %d baseline weeks; only %d complete weeks "
+                      "survive" % (TRENDS_BASELINE_WEEKS, len(kept)))
+    return kept
+
+
+def query_zscore(kept):
+    """z = (target - mean(prev 52)) / sample sd(prev 52), ddof=1, target excluded."""
+    window = kept[-(TRENDS_BASELINE_WEEKS + 1):]
+    target = window[-1][1]
+    baseline = [v for _, v in window[:-1]]
+    if len(baseline) != TRENDS_BASELINE_WEEKS:
+        raise Refused("baseline is %d weeks, not %d"
+                      % (len(baseline), TRENDS_BASELINE_WEEKS))
+    n = len(baseline)
+    mean = sum(baseline) / n
+    var = sum((x - mean) ** 2 for x in baseline) / (n - TRENDS_ZSCORE_DDOF)
+    sd = var ** 0.5
+    if sd == 0:
+        raise Refused("baseline standard deviation is zero; the query is invalid")
+    return {"z": (target - mean) / sd, "target_week": window[-1][0].isoformat(),
+            "baseline_weeks": n, "ddof": TRENDS_ZSCORE_DDOF}
+
+
+def daily_composite(z_ticker, z_issuer):
+    """Both query z-scores are required. There is no one-query fallback."""
+    if z_ticker is None or z_issuer is None:
+        raise Refused("both query z-scores are required; no one-query fallback exists")
+    return (z_ticker + z_issuer) / 2.0
+
+
+def event_gst_zscore(c_tm1, c_t0):
+    if c_tm1 is None or c_t0 is None:
+        raise Refused("both daily composites are required; the Trends leg is invalid")
+    return (c_tm1 + c_t0) / 2.0
+
+
+def stability_gap(c_tm1, c_t0):
+    """Descriptive only. No threshold; cannot change the predictor or eligibility."""
+    return abs(c_tm1 - c_t0)
+
+
+def atomic_write_bytes(path, payload):
+    """Temporary file then rename, so a partial file can never be observed."""
+    path = Path(path)
+    if path.exists():
+        raise Refused("filename collision refused: %s" % path.name)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".part")
+    with tmp.open("wb") as fh:
+        fh.write(payload)
+        fh.flush()
+        os.fsync(fh.fileno())
+    os.replace(tmp, path)
+    return path
+
+
+def serialize_trends_csv(rows, query):
+    """Canonical UTF-8 / LF. Column order is fixed so the hash is deterministic."""
+    out = io.StringIO(newline="")
+    w = csv.writer(out, lineterminator="\n")
+    w.writerow(["date", "value", "isPartial", "query"])
+    for d, v, p in rows:
+        w.writerow([d, v, "True" if p else "False", query])
+    return out.getvalue().encode("utf-8")
+
+
+TRENDS_CSV_SCHEMA = ["date", "value", "isPartial", "query"]
+
+
+def read_trends_csv(raw, expect_query=None):
+    """Re-read an archived attempt. Schema drift and label drift are refused."""
+    rows = list(csv.reader(io.StringIO(raw.decode("utf-8"))))
+    if not rows:
+        raise Refused("archived attempt is empty")
+    if rows[0] != TRENDS_CSV_SCHEMA:
+        raise Refused("unexpected columns %r; schema drift refused" % (rows[0],))
+    out = []
+    for r in rows[1:]:
+        if len(r) != 4:
+            raise Refused("partial row in the archived attempt")
+        if expect_query is not None and r[3] != expect_query:
+            raise Refused("unexpected query label %r; expected %r"
+                          % (r[3], expect_query))
+        out.append((r[0], _num(r[1]), r[2].strip().lower() == "true"))
+    return out
+
+
+def dependency_versions():
+    v = {"python": sys.version.split()[0]}
+    for m in ("pytrends", "pandas", "requests", "urllib3"):
+        try:
+            mod = __import__(m)
+            v[m] = getattr(mod, "__version__", "unknown")
+        except Exception:                                     # noqa: BLE001
+            v[m] = "absent"
+    return v
+
+
+def trends_request_id(retrieval_date, query, attempt):
+    return sha256_bytes("|".join(["ROST", str(retrieval_date), str(query),
+                                  str(attempt)]).encode())[:32]
+
+
+def _existing_trends_ids(path=None):
+    path = Path(path) if path else PROVENANCE_LEDGER
+    ids = set()
+    if path.exists():
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                r = json.loads(line)
+                if r.get("record_type") == TRENDS_ATTEMPT_TYPE:
+                    ids.add(r.get("request_id"))
+    return ids
+
+
+def mode_trends_capture(argv):
+    """One scheduled Trends retrieval date: one request per frozen query, no retry.
+
+    Each parsed response is archived repository-external and hashed BEFORE any
+    z-score is computed, and the z-score is recomputed from the archived bytes.
+    Parsed values are never printed and never committed.
+    """
+    ap = argparse.ArgumentParser(prog="trends-capture")
+    ap.add_argument("--retrieval-date", required=True,
+                    choices=sorted(TRENDS_SCHEDULE.values()))
+    ap.add_argument("--label", required=True, choices=sorted(TRENDS_SCHEDULE))
+    a = ap.parse_args(argv)
+    if TRENDS_SCHEDULE[a.label] != a.retrieval_date:
+        print("REFUSED: label %s is scheduled for %s, not %s"
+              % (a.label, TRENDS_SCHEDULE[a.label], a.retrieval_date))
+        return 3
+    try:
+        assert_in_trends_window(datetime.now(ET), a.retrieval_date)
+    except Refused as e:
+        print("TRENDS CAPTURE REFUSED:", redact(e))
+        print("  the frozen %s ET window is not loosened; nothing was requested."
+              % SNAPSHOT_TARGET_ET)
+        return 3
+
+    from pytrends.request import TrendReq                     # noqa: PLC0415
+    versions = dependency_versions()
+    tf = trends_timeframe()
+    zs, ok = {}, True
+    for slot, query in sorted(TRENDS_QUERIES.items()):
+        rid = trends_request_id(a.retrieval_date, query, 1)
+        if rid in _existing_trends_ids():
+            print("REFUSED: duplicate request identity for %s; no retry is permitted"
+                  % slot)
+            return 3
+        started = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        base = {"data_class": PROVENANCE_CLASS, "record_type": TRENDS_ATTEMPT_TYPE,
+                "request_id": rid, "attempt": 1, "retrieval_date": a.retrieval_date,
+                "retrieval_label": a.label, "query_slot": slot, "query": query,
+                "geo": TRENDS_GEO, "cat": TRENDS_CAT, "gprop": TRENDS_GPROP,
+                "timeframe": tf, "data_cutoff": TRENDS_CUTOFF,
+                "batched_with_other_query": False, "retry_policy": TRENDS_RETRY_POLICY,
+                "request_started_utc": started, "dependency_versions": versions}
+        try:
+            py = TrendReq(hl="en-US", tz=0)
+            py.build_payload([query], cat=TRENDS_CAT, timeframe=tf,
+                             geo=TRENDS_GEO, gprop=TRENDS_GPROP)
+            df = py.interest_over_time()
+            ended = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            if df is None or df.empty:
+                raise Refused("empty Trends frame")
+            cols = list(df.columns)
+            if query not in cols:
+                raise Refused("missing query column %r in %r" % (query, cols))
+            rows = [(i.date().isoformat(), r[query],
+                     bool(r.get("isPartial", False))) for i, r in df.iterrows()]
+            payload = serialize_trends_csv(rows, query)
+            fn = TRENDS_DIR / ("trends_%s_%s_attempt1.csv"
+                               % (a.retrieval_date, slot))
+            atomic_write_bytes(fn, payload)
+            digest = sha256_bytes(payload)
+            # Recompute strictly from the ARCHIVED bytes, after hashing.
+            kept = select_complete_weeks(read_trends_csv(fn.read_bytes(), query))
+            z = query_zscore(kept)
+            zs[slot] = z["z"]
+            base.update({"request_ended_utc": ended, "status": "SUCCESS",
+                         "archived_file_name": fn.name,
+                         "archived_file_bytes": len(payload),
+                         "archived_file_sha256": digest,
+                         "archived_repository_external": str(fn),
+                         "schema": TRENDS_CSV_SCHEMA, "row_count": len(rows),
+                         "complete_weeks_retained": len(kept),
+                         "target_week": z["target_week"],
+                         "baseline_weeks": z["baseline_weeks"], "ddof": z["ddof"],
+                         "z_query": z["z"], "values_printed": False,
+                         "values_committed": False})
+            append_provenance(base)
+            print("  %-12s SUCCESS  file=%s bytes=%d sha256=%s"
+                  % (slot, fn.name, len(payload), digest))
+        except Exception as e:                                # noqa: BLE001
+            ok = False
+            base.update({"request_ended_utc": datetime.now(timezone.utc).strftime(
+                "%Y-%m-%dT%H:%M:%SZ"), "status": "FAILURE",
+                "failure_reason": redact("%s: %s" % (type(e).__name__, e)),
+                "retried": False})
+            append_provenance(base)
+            print("  %-12s FAILURE (recorded, not retried)" % slot)
+    if not ok or len(zs) != 2:
+        print("TRENDS DAY INVALID: both queries are required; no one-query fallback.")
+        return 3
+    comp = daily_composite(zs["ticker_query"], zs["issuer_query"])
+    append_provenance({"data_class": PROVENANCE_CLASS,
+                       "record_type": TRENDS_DAILY_TYPE,
+                       "retrieval_date": a.retrieval_date, "retrieval_label": a.label,
+                       "daily_composite": comp, "both_queries_present": True,
+                       "status": TRENDS_STATUS_CAPTURED,
+                       "options_or_cboe_accessed": False, "outcome_accessed": False,
+                       "is_observation": False})
+    print("  daily_composite recorded for %s (%s)." % (a.label, a.retrieval_date))
+    print("  no options, price, return or outcome was accessed.")
+    return 0
+
+
+def mode_trends_finalize(argv=None):
+    """Combine the two scheduled daily composites. Both are required."""
+    recs = [json.loads(x) for x in
+            PROVENANCE_LEDGER.read_text(encoding="utf-8").splitlines()
+            if x.strip()] if PROVENANCE_LEDGER.exists() else []
+    by = {r["retrieval_label"]: r["daily_composite"] for r in recs
+          if r.get("record_type") == TRENDS_DAILY_TYPE}
+    try:
+        g = event_gst_zscore(by.get("T-1"), by.get("T0"))
+    except Refused as e:
+        print("TRENDS LEG INVALID:", redact(e))
+        print("  have:", sorted(by))
+        return 3
+    gap = stability_gap(by["T-1"], by["T0"])
+    append_provenance({"data_class": PROVENANCE_CLASS,
+                       "record_type": TRENDS_FINAL_TYPE,
+                       "schedule_event_id": schedule_event_id("ROST", "2026-08-20",
+                                                              "AMC"),
+                       "gst_zscore": g, "stability_gap": gap,
+                       "stability_gap_is_descriptive_only": True,
+                       "stability_gap_threshold": None,
+                       "both_days_present": True,
+                       "status": TRENDS_STATUS_CAPTURED,
+                       "candidate_attention_proxy_not_validated_construct": True,
+                       "directional": False, "is_an_outcome": False,
+                       "is_observation": False,
+                       "options_or_cboe_accessed": False, "outcome_accessed": False})
+    print("TRENDS LEG FINALISED (pre-event input, NOT a completed observation)")
+    print("  gst_zscore     %.6f" % g)
+    print("  stability_gap  %.6f  (descriptive only; no threshold)" % gap)
+    print("  snapshot_manifest.jsonl created: %s" % MANIFEST.exists())
+    return 0
+
+
 def mode_schedule(argv):
     """Prerecord ONE confirmed prospective event. Collects nothing.
 
@@ -1837,7 +2171,8 @@ MODES = {"doctor": mode_doctor, "calendar": mode_calendar,
          "snapshot": mode_snapshot, "validate": mode_validate,
          "alpaca-check": mode_alpaca_check, "universe": mode_universe,
          "readiness": mode_readiness, "cboe-import": mode_cboe_import,
-         "schedule": mode_schedule}
+         "schedule": mode_schedule, "trends-capture": mode_trends_capture,
+         "trends-finalize": mode_trends_finalize}
 
 
 def main(argv=None):

@@ -1109,8 +1109,13 @@ ck("33h. it names the fields that materially determine gst_zscore",
    {"gst_zscore_arithmetic", "baseline_window", "query_batching_comparison_method",
     "geography_geo", "category_cat", "google_property_gprop", "timeframe",
     "partial_weekly_period_treatment"})
-ck("33i. no gst_zscore definition exists anywhere in this study to implement",
-   "gst_zscore" not in DESIGN and "gst_zscore" not in SRC)
+UND_SHA = [x for x in git("log", "--format=%H", "-S", "TRENDS_METHOD_UNDERSPECIFIED",
+                          "--", "Live Signal Engine/Attention_Options_Dislocation/"
+                          "collection_provenance.jsonl").splitlines() if x.strip()]
+SRC_AT_GAP = (git("show", UND_SHA[0] + ":tools/collect_attention_options_snapshot.py")
+              if UND_SHA else "")
+ck("33i. no gst_zscore definition existed when the gap was recorded",
+   "gst_zscore" not in DESIGN and "gst_zscore" not in SRC_AT_GAP)
 ck("33j. the run STOPPED before the first request; nothing was retrieved or computed",
    U1.get("trends_request_made") is False
    and U1.get("trends_attempts_executed") == 0
@@ -1122,13 +1127,167 @@ ck("33l. no options, Cboe, price, return or outcome was accessed for the Trends 
    U1.get("options_or_cboe_accessed") is False
    and U1.get("outcome_accessed") is False
    and U1.get("observation_created") is False)
-ck("33m. no Trends network client was added to the collector",
-   not re.search(r"pytrends|TrendReq|trends\.google", SRC, re.I))
+ck("33m. no Trends client existed when the gap was recorded (it was added only "
+   "after the method was frozen)",
+   not re.search(r"pytrends|TrendReq", SRC_AT_GAP, re.I))
 ck("33n. no completed observation and no snapshot manifest exist",
    not C.MANIFEST.exists()
    and all(r.get("data_class") != C.RESEARCH_CLASS for r in LEDGER_RECS))
 ck("33o. this branch depends on no teammate branch, code or data",
    not re.search(r"import\s+(pytrends|gst_market_response)", SRC))
+
+
+# ------------------------------------ 34. frozen Trends method implementation
+import statistics  # noqa: E402
+
+TMF = [r for r in LEDGER_RECS if r.get("record_type") == "TRENDS_METHOD_FROZEN"]
+M1 = TMF[0] if TMF else {}
+TMF_SHA = [x for x in git("log", "--format=%H", "-S", "TRENDS_METHOD_FROZEN", "--",
+                          "Live Signal Engine/Attention_Options_Dislocation/"
+                          "collection_provenance.jsonl").splitlines() if x.strip()]
+LEDGER_ONLY = ["Live Signal Engine/Attention_Options_Dislocation/collection_provenance.jsonl"]
+ck("34a. the method governance record is committed", bool(M1) and bool(TMF_SHA))
+ck("34b. its commit changed only the ledger -- no implementation code",
+   bool(TMF_SHA) and [x for x in git("show", "--name-only", "--format=",
+                                     TMF_SHA[0]).splitlines() if x.strip()]
+   == LEDGER_ONLY)
+ck("34c. the collector had no trends implementation at that commit",
+   bool(TMF_SHA) and "mode_trends_capture" not in git(
+       "show", TMF_SHA[0] + ":tools/collect_attention_options_snapshot.py"))
+ck("34d. governance declares it preceded any request and any outcome",
+   M1.get("all_choices_fixed_before_any_trends_request") is True
+   and M1.get("all_choices_fixed_before_any_outcome") is True
+   and M1.get("trends_request_made") is False)
+ck("34e. queries are separate one-keyword requests, never batched",
+   M1["queries"]["batching"] == "SEPARATE_ONE_KEYWORD_REQUESTS"
+   and M1["queries"]["batched_together"] is False
+   and C.TRENDS_QUERIES == {"ticker_query": "ROST stock",
+                            "issuer_query": "Ross Stores, Inc. stock"})
+ck("34f. exact request parameters match the frozen record",
+   (C.TRENDS_GEO, C.TRENDS_CAT, C.TRENDS_GPROP, C.TRENDS_CUTOFF)
+   == ("US", 0, "", "2026-08-18"))
+ck("34g. the retrieval window is exactly 730 days before the cutoff",
+   C.trends_window() == ("2024-08-18", "2026-08-18")
+   and (date.fromisoformat("2026-08-18")
+        - date.fromisoformat("2024-08-18")).days == 730)
+ck("34h. the off-by-one convenience field was corrected append-only",
+   any(r.get("record_type") == "TRENDS_METHOD_FROZEN_CORRECTION"
+       and r.get("correct_value") == "2024-08-18"
+       and r.get("detected_before_any_trends_request") is True
+       for r in LEDGER_RECS))
+
+
+def wk(start, n, val=10.0, partial_last=False):
+    d0 = date.fromisoformat(start)
+    return [((d0 + timedelta(days=7 * i)).isoformat(), val,
+             partial_last and i == n - 1) for i in range(n)]
+
+
+FULL = wk("2025-08-11", 54)
+ck("34i. every retained week ends on or before the cutoff",
+   all(d + timedelta(days=6) <= date.fromisoformat("2026-08-18")
+       for d, _ in C.select_complete_weeks(FULL)))
+ck("34j. rows marked partial are rejected",
+   len(C.select_complete_weeks(wk("2025-08-11", 54, partial_last=True)))
+   < len(C.select_complete_weeks(FULL)) + 1)
+ck("34k. non-weekly resolution is refused",
+   refuses(lambda: C.select_complete_weeks(
+       [("2026-01-01", 1.0, False), ("2026-01-02", 2.0, False),
+        ("2026-01-03", 3.0, False)])))
+ck("34l. a missing week is refused, never interpolated",
+   refuses(lambda: C.select_complete_weeks(
+       [w for i, w in enumerate(FULL) if i != 10])))
+ck("34m. fewer than 53 complete weeks is refused",
+   refuses(lambda: C.select_complete_weeks(wk("2026-01-05", 20))))
+ck("34n. zero is a valid value, not missing",
+   len(C.select_complete_weeks(wk("2025-08-11", 54, val=0.0))) >= 53)
+
+VALS = [float(i % 17) + 1.0 for i in range(53)]
+KEPT = [(date.fromisoformat("2025-08-11") + timedelta(days=7 * i), VALS[i])
+        for i in range(53)]
+Z = C.query_zscore(KEPT)
+_base, _tgt = VALS[:-1], VALS[-1]
+ck("34o. z uses the prior 52 weeks, excluding the target",
+   Z["baseline_weeks"] == 52 and len(_base) == 52)
+ck("34p. z uses sample standard deviation with ddof=1",
+   Z["ddof"] == 1
+   and abs(Z["z"] - (_tgt - statistics.fmean(_base)) / statistics.stdev(_base)) < 1e-12)
+ck("34q. a zero-variance baseline invalidates the query",
+   refuses(lambda: C.query_zscore(
+       [(date.fromisoformat("2025-08-11") + timedelta(days=7 * i), 5.0)
+        for i in range(53)])))
+ck("34r. daily composite is the mean of the two query z-scores",
+   C.daily_composite(1.0, 2.0) == 1.5)
+ck("34s. a missing query refuses the day -- no one-query fallback",
+   refuses(lambda: C.daily_composite(1.0, None))
+   and refuses(lambda: C.daily_composite(None, 2.0)))
+ck("34t. the event score is the mean of the two daily composites",
+   C.event_gst_zscore(1.0, 2.0) == 1.5)
+ck("34u. a missing day invalidates the Trends leg",
+   refuses(lambda: C.event_gst_zscore(1.0, None)))
+ck("34v. stability gap is descriptive and symmetric",
+   C.stability_gap(1.0, 2.5) == C.stability_gap(2.5, 1.0) == 1.5)
+
+ROWS = [("2026-08-03", 10.0, False), ("2026-08-10", 0.0, False)]
+BLOB = C.serialize_trends_csv(ROWS, "ROST stock")
+ck("34w. serialization is canonical UTF-8/LF and deterministic",
+   BLOB == C.serialize_trends_csv(ROWS, "ROST stock")
+   and b"\r\n" not in BLOB and BLOB.decode("utf-8").startswith("date,value"))
+ck("34x. hashing the archive is deterministic and content-addressed",
+   C.sha256_bytes(BLOB) == C.sha256_bytes(C.serialize_trends_csv(ROWS, "ROST stock"))
+   and C.sha256_bytes(BLOB) != C.sha256_bytes(
+       C.serialize_trends_csv(ROWS, "Ross Stores, Inc. stock")))
+ck("34y. schema drift is refused", refuses(lambda: C.read_trends_csv(b"a,b\n1,2\n")))
+ck("34z. an unexpected query label is refused",
+   refuses(lambda: C.read_trends_csv(BLOB, "SOMETHING ELSE")))
+with tempfile.TemporaryDirectory() as td:
+    f = Path(td) / "t.csv"
+    C.atomic_write_bytes(f, BLOB)
+    ck("34aa. atomic write leaves no .part file behind",
+       f.exists() and not list(Path(td).glob("*.part")))
+    ck("34ab. a filename collision is refused",
+       refuses(lambda: C.atomic_write_bytes(f, BLOB)))
+ck("34ac. the archive destination is repository-external",
+   ROOT not in C.TRENDS_DIR.parents and "gst-source-quarantine" in str(C.TRENDS_DIR))
+
+ck("34ad. capture inside the frozen 15:45 ET window is permitted",
+   C.assert_in_trends_window(datetime(2026, 8, 19, 15, 45, tzinfo=C.ET), "2026-08-19"))
+ck("34ae. capture outside the window is refused, window not loosened",
+   refuses(lambda: C.assert_in_trends_window(
+       datetime(2026, 8, 19, 14, 45, tzinfo=C.ET), "2026-08-19"))
+   and C.SNAPSHOT_WINDOW_TOLERANCE_MINUTES == 10)
+ck("34af. capture on the wrong day is refused",
+   refuses(lambda: C.assert_in_trends_window(
+       datetime(2026, 8, 18, 15, 45, tzinfo=C.ET), "2026-08-19")))
+ck("34ag. the two retrieval dates stay distinct",
+   C.TRENDS_SCHEDULE["T-1"] != C.TRENDS_SCHEDULE["T0"]
+   and C.trends_request_id("2026-08-19", "ROST stock", 1)
+   != C.trends_request_id("2026-08-20", "ROST stock", 1))
+CAPTURE_SRC = SRC.split("def mode_trends_capture")[1].split(chr(10) + "def ")[0]
+ck("34ah. one request per query per date, and no retry loop",
+   C.TRENDS_REQUESTS_PER_QUERY_PER_DATE == 1 and C.TRENDS_RETRY_POLICY == "NONE"
+   and not re.search(r"while|max_retries|backoff|retry\(", CAPTURE_SRC, re.I))
+ck("34ai. no Trends attempt has been executed yet",
+   not any(r.get("record_type") == "TRENDS_ATTEMPT" for r in LEDGER_RECS))
+ck("34aj. no daily composite or event score exists yet",
+   not any(r.get("record_type") in ("TRENDS_DAILY_COMPOSITE", "TRENDS_EVENT_SCORE")
+           for r in LEDGER_RECS))
+ck("34ak. the implementation borrows no teammate or HYP-01 code",
+   not re.search(r"import\s+gst_market_response|from\s+gst_market_response|hyp01",
+                 SRC, re.I))
+_CAPTURE_CODE = "\n".join(
+    l for l in CAPTURE_SRC.splitlines()
+    if "accessed" not in l and "options_or_cboe" not in l)
+ck("34al. the Trends path reads and computes no option, price, return or outcome",
+   not re.search(r"(strike|expiration|underlying_price|implied_move|straddle"
+                 r"|realized|post_event|cboe|alpaca)", _CAPTURE_CODE, re.I))
+ck("34am. parsed Trends values are archived and hashed BEFORE any z-score",
+   CAPTURE_SRC.index("atomic_write_bytes") < CAPTURE_SRC.index("query_zscore")
+   and CAPTURE_SRC.index("sha256_bytes") < CAPTURE_SRC.index("query_zscore"))
+ck("34an. the z-score is recomputed from the ARCHIVED bytes, not from memory",
+   "read_trends_csv(fn.read_bytes()" in CAPTURE_SRC)
+ck("34ao. no completed observation and no snapshot manifest exist",
+   not C.MANIFEST.exists())
 
 print()
 print(f"{CHECKS - len(FAIL)} passed, {len(FAIL)} failed, {CHECKS} assertions total")
