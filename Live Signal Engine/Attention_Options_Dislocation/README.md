@@ -30,6 +30,43 @@ python tools/collect_attention_options_snapshot.py validate
 | `snapshot` | Timestamped pre-event input snapshot. Refuses outside the 15:45 ET window, on the wrong snapshot day, without a provider credential, or without issuer/SEC-confirmed event timing. |
 | `validate` | Re-checks stored records: schema, provenance, labels, timestamps, hashes, uniqueness, pre-event eligibility. |
 
+## Trends leg — frozen method (2026-08-19)
+
+Frozen in the ledger as `TRENDS_METHOD_FROZEN` **before any implementation code or request**:
+`ROST stock` and `Ross Stores, Inc. stock` as **separate one-keyword requests** (never batched),
+`geo=US`, `cat=0`, `gprop=""`, cutoff `2026-08-18`, window `2024-08-18 .. 2026-08-18` (730 days),
+weekly, **one request per query per date, no retry**. Complete weeks only
+(`week_start + 6d <= 2026-08-18`); target = latest complete week; baseline = prior **52** weeks;
+`z = (target - mean) / sd(ddof=1)`; a zero baseline sd invalidates the query.
+`daily = (z_ticker + z_issuer) / 2` (both required, no one-query fallback);
+`gst_zscore = (daily_T-1 + daily_T0) / 2` (both days required, else the leg is invalid).
+`stability_gap = |daily_T-1 - daily_T0|` is **descriptive only** — no threshold, and it cannot
+change the predictor or eligibility.
+
+`gst_zscore` is a **candidate attention proxy, not a validated construct**. It is not directional,
+is not an outcome, and is never characterised as favorable or unfavorable. The method is independent
+of HYP-01 and of all teammate work.
+
+Parsed responses are archived **repository-external** under `C:\\Users\\hakur\\Downloads\\gst-source-quarantine\\TRENDS_2026-08-20_ROST`, written **atomically**
+(temp file + rename) and **hashed before** any z-score is computed; the z-score is then recomputed
+from the archived bytes. Parsed values are never printed and never committed. A stored hash proves
+the integrity of the captured parsed input — not the original raw Google HTTP response, not
+Google's sampling validity, and not construct validity.
+
+```
+# T-1  --  2026-08-19, 15:45 ET / 14:45 CT
+python tools/collect_attention_options_snapshot.py trends-capture --label T-1 --retrieval-date 2026-08-19
+
+# T0   --  2026-08-20, 15:45 ET / 14:45 CT
+python tools/collect_attention_options_snapshot.py trends-capture --label T0 --retrieval-date 2026-08-20
+
+# finalize  --  only after the T0 capture
+python tools/collect_attention_options_snapshot.py trends-finalize
+```
+
+Outside the 15:45 ET window the capture **refuses and issues no request**. The window is the existing
+repository convention and is not loosened.
+
 ## Provider (amended 2026-08-18) — MANUAL Cboe capture
 
 Per `PROVIDER_AMENDMENT_2026-08-18_CBOE_MANUAL.md`, Alpaca is abandoned (HTTP 401, credentials

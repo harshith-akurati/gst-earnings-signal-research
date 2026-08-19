@@ -1,6 +1,31 @@
 # Changelog
 
 
+## 2026-08-19 — Trends method frozen prospectively and implemented; no request made
+
+**Zero live Google Trends requests. No Cboe request, options value, price, return or outcome. No
+observation; `snapshot_manifest.jsonl` still absent.**
+
+`TRENDS_METHOD_FROZEN` was committed at `b7ac22d` as a **ledger-only** change, before any
+implementation code existed and before any request — resolving `TRENDS_METHOD_UNDERSPECIFIED`. It
+fixes separate one-keyword requests for `ROST stock` and `Ross Stores, Inc. stock` (never batched),
+`geo=US`, `cat=0`, `gprop=""`, cutoff `2026-08-18`, a 730-day window, weekly granularity, one request
+per query per date with no retry, the complete-week rule, a 52-week baseline, `ddof=1`, the daily and
+event aggregation with no one-query and no one-day fallback, and a purely descriptive stability gap.
+
+The implementation lives in the existing collector (`trends-capture`, `trends-finalize`). It refuses
+outside the existing 15:45 ET +/- 10 min window — exercised live today at 01:32 ET, which
+**refused and issued no request**. Parsed responses are archived repository-external, written
+atomically and hashed **before** any z-score, which is then recomputed from the archived bytes.
+
+**Self-correction:** the governance record's convenience field `window_start` read `2024-08-19`; 730
+days before `2026-08-18` is `2024-08-18`. The authoritative rule text is unchanged and the code
+derives the window from the rule, not the field. Corrected by an **append-only**
+`TRENDS_METHOD_FROZEN_CORRECTION`, before any request, affecting no captured value.
+
+Three earlier assertions that asserted the *absence* of a Trends method now assert the historical
+fact at the commit that recorded the gap. Suite: **284 assertions**, all passing, sockets blocked.
+
 ## 2026-08-19 - ROST Trends leg: issuer query frozen, method gate stops before retrieval
 
 **No Google Trends request was made. No options, Cboe, price, return or earnings outcome was
