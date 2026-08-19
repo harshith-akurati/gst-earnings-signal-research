@@ -1112,7 +1112,7 @@ ck("33h. it names the fields that materially determine gst_zscore",
 UND_SHA = [x for x in git("log", "--format=%H", "-S", "TRENDS_METHOD_UNDERSPECIFIED",
                           "--", "Live Signal Engine/Attention_Options_Dislocation/"
                           "collection_provenance.jsonl").splitlines() if x.strip()]
-SRC_AT_GAP = (git("show", UND_SHA[0] + ":tools/collect_attention_options_snapshot.py")
+SRC_AT_GAP = (git("show", UND_SHA[-1] + ":tools/collect_attention_options_snapshot.py")
               if UND_SHA else "")
 ck("33i. no gst_zscore definition existed when the gap was recorded",
    "gst_zscore" not in DESIGN and "gst_zscore" not in SRC_AT_GAP)
@@ -1149,11 +1149,11 @@ LEDGER_ONLY = ["Live Signal Engine/Attention_Options_Dislocation/collection_prov
 ck("34a. the method governance record is committed", bool(M1) and bool(TMF_SHA))
 ck("34b. its commit changed only the ledger -- no implementation code",
    bool(TMF_SHA) and [x for x in git("show", "--name-only", "--format=",
-                                     TMF_SHA[0]).splitlines() if x.strip()]
+                                     TMF_SHA[-1]).splitlines() if x.strip()]
    == LEDGER_ONLY)
 ck("34c. the collector had no trends implementation at that commit",
    bool(TMF_SHA) and "mode_trends_capture" not in git(
-       "show", TMF_SHA[0] + ":tools/collect_attention_options_snapshot.py"))
+       "show", TMF_SHA[-1] + ":tools/collect_attention_options_snapshot.py"))
 ck("34d. governance declares it preceded any request and any outcome",
    M1.get("all_choices_fixed_before_any_trends_request") is True
    and M1.get("all_choices_fixed_before_any_outcome") is True
