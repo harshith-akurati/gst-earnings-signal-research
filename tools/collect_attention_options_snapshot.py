@@ -96,6 +96,10 @@ STRIKE_SELECTION_METHOD = "NEAREST_STRIKE_TO_CONTEMPORANEOUS_UNDERLYING"
 
 NON_EXECUTABLE_LABELS = frozenset({ALPACA_LABEL, CBOE_LABEL})
 
+SCHEDULE_RECORD_TYPE = "PROSPECTIVE_EVENT_SCHEDULE_CONFIRMED"
+SCHEDULE_STATUS = "SCHEDULED_NOT_COLLECTED"
+OFFICIAL_IR_SOURCE = "OFFICIAL_ISSUER_INVESTOR_RELATIONS"
+
 RESEARCH_CLASS = "RESEARCH"
 VALIDATION_CLASS = "SYSTEM_VALIDATION"
 PROVENANCE_CLASS = "PROVENANCE"
@@ -613,6 +617,26 @@ def assert_no_executable_claim(rec):
 
 # ------------------------------------------------------------ provenance ledger
 
+def schedule_event_id(ticker, event_date, session):
+    """Deterministic event identity, using the same convention as record_id():
+    sha256 over pipe-joined identity fields, truncated to 32 hex characters."""
+    return sha256_bytes("|".join([str(ticker).upper(), str(event_date),
+                                  str(session).upper(),
+                                  SCHEDULE_RECORD_TYPE]).encode())[:32]
+
+
+def existing_schedule_ids(path=None):
+    path = Path(path) if path else PROVENANCE_LEDGER
+    ids = set()
+    if Path(path).exists():
+        for line in Path(path).read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                r = json.loads(line)
+                if r.get("record_type") == SCHEDULE_RECORD_TYPE:
+                    ids.add(r.get("schedule_event_id"))
+    return ids
+
+
 def append_provenance(rec, path=None):
     """Append-only ledger for non-research provenance. Never the research panel."""
     path = path or PROVENANCE_LEDGER
@@ -621,6 +645,16 @@ def append_provenance(rec, path=None):
                       "provenance ledger")
     if Path(path).name == Path(MANIFEST).name:
         raise Refused("the provenance ledger may not be the research manifest")
+    if rec.get("record_type") == SCHEDULE_RECORD_TYPE:
+        # A schedule is NOT an observation and must never look like one.
+        if rec.get("status") != SCHEDULE_STATUS:
+            raise Refused("a scheduling record must declare status %s"
+                          % SCHEDULE_STATUS)
+        sid = rec.get("schedule_event_id")
+        if not sid:
+            raise Refused("a scheduling record needs a deterministic event identity")
+        if sid in existing_schedule_ids(path):
+            raise Refused("duplicate scheduling refused for event identity %s" % sid)
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     with Path(path).open("a", encoding="utf-8", newline="\n") as fh:
         fh.write(json.dumps(rec, sort_keys=True) + "\n")
@@ -1239,6 +1273,84 @@ def assert_delayed_display_timing(display_utc, retrieved_utc,
     return True
 
 
+def mode_schedule(argv):
+    """Prerecord ONE confirmed prospective event. Collects nothing.
+
+    This writes a non-observation scheduling record to the provenance ledger. It
+    never creates the research manifest, never contacts a provider, and never opens
+    an outcome.
+    """
+    ap = argparse.ArgumentParser(prog="schedule")
+    ap.add_argument("--ticker", required=True)
+    ap.add_argument("--event-date", required=True)
+    ap.add_argument("--event-session", required=True,
+                    choices=["AMC", "BMO", "amc", "bmo"])
+    ap.add_argument("--release-time", required=True)
+    ap.add_argument("--call-time", required=True)
+    ap.add_argument("--capture-at", required=True, help="manual capture, ET offset")
+    ap.add_argument("--capture-at-ct", required=True, help="same instant, CT offset")
+    ap.add_argument("--ir-url", required=True)
+    a = ap.parse_args(argv)
+    tick, session = a.ticker.upper(), a.event_session.upper()
+    try:
+        uni = _committed_universe()
+        if not uni:
+            raise Refused("no committed universe snapshot")
+        members = {c["ticker"]: c["issuer_name"] for c in uni["constituents"]}
+        if tick not in members:
+            raise Refused("%s is not in the committed official universe" % tick)
+        if MANIFEST.exists():
+            raise Refused("a research manifest already exists; refusing to schedule "
+                          "against an existing panel without review")
+        sid = schedule_event_id(tick, a.event_date, session)
+        rec = {
+            "data_class": PROVENANCE_CLASS, "record_type": SCHEDULE_RECORD_TYPE,
+            "schedule_event_id": sid,
+            "ticker": tick, "issuer_name": members[tick],
+            "event_date": str(a.event_date), "announcement_session": session,
+            "earnings_release_time": a.release_time,
+            "conference_call_time": a.call_time,
+            "manual_capture_at_et": a.capture_at,
+            "manual_capture_at_ct": a.capture_at_ct,
+            "official_source_url": a.ir_url,
+            "source_classification": OFFICIAL_IR_SOURCE,
+            "event_timing_status": "CONFIRMED_BY_OFFICIAL_ISSUER_SOURCE",
+            "confirmed_utc": datetime.now(timezone.utc).strftime(
+                "%Y-%m-%dT%H:%M:%SZ"),
+            "status": SCHEDULE_STATUS,
+            "snapshot_date": snapshot_date_for(a.event_date, session),
+            "snapshot_target_et": SNAPSHOT_TARGET_ET,
+            "search_window_end": search_window_end(a.event_date),
+            "universe_source_kind": uni["source_kind"],
+            # Explicitly: nothing has been collected.
+            "is_observation": False,
+            "trends_input_collected": False,
+            "option_chain_collected": False,
+            "outcome_collected": False,
+            "observation_collected": False,
+            "cboe_accessed_by_code": False,
+            "planned_options_provider": CBOE_PROVIDER,
+            "planned_feed_designation": CBOE_LABEL,
+            "frozen_query_rule": "<TICKER> stock ; <Issuer name> stock",
+            "resolved_ticker_query": "%s stock" % tick,
+            "issuer_name_query_status": (
+                "UNRESOLVED_NO_FROZEN_NORMALISER: the committed universe stores the "
+                "security description, not a bare issuer name, and no frozen "
+                "query-normalisation code exists to derive one without judgment"),
+        }
+        append_provenance(rec)
+    except Refused as e:
+        print("SCHEDULE REFUSED:", redact(e))
+        return 3
+    print("SCHEDULED (not collected): %s %s %s" % (tick, a.event_date, session))
+    print("  schedule_event_id      %s" % sid)
+    print("  release / call         %s / %s" % (a.release_time, a.call_time))
+    print("  manual capture         %s  (%s)" % (a.capture_at, a.capture_at_ct))
+    print("  status                 %s" % SCHEDULE_STATUS)
+    print("  manifest created       %s" % MANIFEST.exists())
+    return 0
+
+
 def mode_cboe_import(argv):
     """Import ONE manually downloaded Cboe delayed-quotes CSV. No network access.
 
@@ -1724,7 +1836,8 @@ def mode_readiness(argv=None):
 MODES = {"doctor": mode_doctor, "calendar": mode_calendar,
          "snapshot": mode_snapshot, "validate": mode_validate,
          "alpaca-check": mode_alpaca_check, "universe": mode_universe,
-         "readiness": mode_readiness, "cboe-import": mode_cboe_import}
+         "readiness": mode_readiness, "cboe-import": mode_cboe_import,
+         "schedule": mode_schedule}
 
 
 def main(argv=None):

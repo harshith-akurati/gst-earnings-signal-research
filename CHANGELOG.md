@@ -40,8 +40,9 @@ wrong-ticker refusal, wrong-window and post-announcement refusal, append-only be
 of any executable-price/P&L/trading claim, intact Alpaca 401 provenance, and that no observation
 exists after the fixtures run.
 
-**Next confirmed event:** Ross Stores (ROST), **2026-08-20, 4:15 p.m. ET → AMC**. Manual collection
-at **2026-08-20 15:45 ET**.
+**Next confirmed event:** Ross Stores (ROST), **2026-08-20**. Earnings release **approximately
+4:00 p.m. ET**; the **4:15 p.m. ET** time is the *conference call*, not the release. Classification
+**AMC**. Manual collection at **2026-08-20 15:45 ET / 14:45 CT**.
 
 ## 2026-08-17 — Attention–Options Dislocation: Alpaca provider amendment, and an honest stop
 

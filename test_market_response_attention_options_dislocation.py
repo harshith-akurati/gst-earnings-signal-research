@@ -1010,6 +1010,65 @@ ck("31c. Amendment 1 is still byte-identical to its frozen hash",
 ck("31d. no fixture test left a real observation behind",
    not C.MANIFEST.exists())
 
+
+# ----------------------------- 32. ROST pre-capture scheduling (non-observation)
+SCHEDULE_SRC = SRC.split("def mode_schedule")[1].split(chr(10) + "def ")[0]
+SCHED = [r for r in LEDGER_RECS if r.get("record_type") == C.SCHEDULE_RECORD_TYPE]
+ck("32a. exactly one confirmed prospective event is scheduled", len(SCHED) == 1)
+S1 = SCHED[0] if SCHED else {}
+ck("32b. release time and conference-call time are distinguished, not conflated",
+   S1.get("earnings_release_time") == "approximately 16:00 ET"
+   and S1.get("conference_call_time") == "16:15 ET"
+   and S1["earnings_release_time"] != S1["conference_call_time"])
+ck("32c. the identity, date, session and official IR source are recorded",
+   S1.get("ticker") == "ROST" and S1.get("event_date") == "2026-08-20"
+   and S1.get("announcement_session") == "AMC"
+   and S1.get("source_classification") == "OFFICIAL_ISSUER_INVESTOR_RELATIONS"
+   and "investors.rossstores.com" in S1.get("official_source_url", ""))
+ck("32d. both manual capture clocks denote the same instant",
+   datetime.fromisoformat(S1["manual_capture_at_et"])
+   == datetime.fromisoformat(S1["manual_capture_at_ct"]))
+ck("32e. the event identity is deterministic",
+   C.schedule_event_id("ROST", "2026-08-20", "AMC") == S1.get("schedule_event_id"))
+ck("32f. scheduling happened BEFORE the event",
+   datetime.fromisoformat(S1["confirmed_utc"].replace("Z", "+00:00"))
+   < datetime.fromisoformat(S1["manual_capture_at_et"]))
+ck("32g. a schedule is NOT an observation",
+   S1.get("status") == "SCHEDULED_NOT_COLLECTED" and S1.get("is_observation") is False
+   and S1.get("data_class") != C.RESEARCH_CLASS)
+ck("32h. nothing has been collected for it",
+   all(S1.get(k) is False for k in ("trends_input_collected", "option_chain_collected",
+                                    "outcome_collected", "observation_collected",
+                                    "cboe_accessed_by_code")))
+ck("32i. scheduling did not create the research manifest", not C.MANIFEST.exists())
+ck("32j. duplicate scheduling is refused",
+   refuses(lambda: C.append_provenance(dict(S1), C.PROVENANCE_LEDGER)))
+ck("32k. a schedule that omits the not-collected status is refused",
+   refuses(lambda: C.append_provenance(
+       dict(S1, status="COLLECTED", schedule_event_id="z" * 32),
+       C.PROVENANCE_LEDGER)))
+ck("32l. ROST is in the committed official universe",
+   any(c["ticker"] == "ROST" for r in LEDGER_RECS
+       if r.get("record_type") == "universe_snapshot" for c in r["constituents"]))
+ck("32m. the frozen snapshot day and T-2 cutoff are applied, not improvised",
+   S1.get("snapshot_date") == C.snapshot_date_for("2026-08-20", "AMC")
+   and S1.get("search_window_end") == C.search_window_end("2026-08-20")
+   and S1.get("snapshot_target_et") == C.SNAPSHOT_TARGET_ET)
+ck("32n. the ticker Trends query follows the frozen rule with no new judgment",
+   S1.get("resolved_ticker_query") == "ROST stock")
+ck("32o. the unresolved issuer-name query is disclosed, not invented",
+   "UNRESOLVED" in S1.get("issuer_name_query_status", ""))
+ck("32p. no outcome was accessed for this event",
+   not any(k for k in S1 if re.search(r"realized|post_?event|return|surprise", k, re.I))
+   and S1.get("outcome_collected") is False)
+ck("32q. scheduling reached no network: no Cboe or Trends request exists in the path",
+   not re.search(r"(urlopen|urlretrieve|http_json|alpaca_get|requests\.|socket|pytrends"
+                 r"|TrendReq|webdriver)",
+                 SCHEDULE_SRC, re.I)
+   and not any("cboe" in u.lower() or "google" in u.lower()
+               for u in url_literals(SRC)))
+
+
 print()
 print(f"{CHECKS - len(FAIL)} passed, {len(FAIL)} failed, {CHECKS} assertions total")
 if FAIL:
