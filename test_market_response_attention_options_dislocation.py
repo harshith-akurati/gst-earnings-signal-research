@@ -1069,6 +1069,67 @@ ck("32q. scheduling reached no network: no Cboe or Trends request exists in the 
                for u in url_literals(SRC)))
 
 
+
+# --------------- 33. ROST Trends leg: identity frozen, method underspecified
+QID = [r for r in LEDGER_RECS if r.get("record_type") == "QUERY_IDENTITY_RULE_FROZEN"]
+UND = [r for r in LEDGER_RECS if r.get("record_type") == "TRENDS_METHOD_UNDERSPECIFIED"]
+Q1 = QID[0] if QID else {}
+U1 = UND[0] if UND else {}
+QID_SHA = [x for x in git("log", "--diff-filter=M", "--format=%H", "-S",
+                          "QUERY_IDENTITY_RULE_FROZEN", "--",
+                          "Live Signal Engine/Attention_Options_Dislocation/"
+                          "collection_provenance.jsonl").splitlines() if x.strip()]
+ck("33a. the query-identity rule is committed", bool(QID) and bool(QID_SHA))
+ck("33b. its commit changed only the ledger",
+   QID_SHA and [x for x in git("show", "--name-only", "--format=", QID_SHA[-1]).splitlines()
+                if x.strip()] ==
+   ["Live Signal Engine/Attention_Options_Dislocation/collection_provenance.jsonl"])
+ck("33c. the rule was fixed before any Trends request and before any outcome",
+   Q1.get("fixed_before_any_trends_request") is True
+   and Q1.get("fixed_before_any_outcome") is True
+   and Q1.get("trends_request_made") is False
+   and Q1.get("uses_identity_information_only") is True)
+R0 = (Q1.get("resolutions") or [{}])[0]
+ck("33d. the exact ROST queries and cutoff are frozen",
+   R0.get("ticker_query") == "ROST stock"
+   and R0.get("issuer_query") == "Ross Stores, Inc. stock"
+   and R0.get("data_cutoff") == "2026-08-18"
+   and R0.get("data_cutoff") == C.search_window_end("2026-08-20"))
+ck("33e. the issuer name came from the official IR announcement, not from stripping "
+   "a Nasdaq security description",
+   R0.get("resolved_by_rule_clause") == 1
+   and R0.get("source_classification") == "OFFICIAL_ISSUER_INVESTOR_RELATIONS"
+   and "investors.rossstores.com" in R0.get("official_source_url", "")
+   and R0.get("issuer_display_name") == "Ross Stores, Inc.")
+ck("33f. the rule forbids deriving issuer names by stripping words",
+   any("stripping words" in str(x) for x in Q1.get("rule", [])))
+ck("33g. the method gate recorded that the frozen method is underspecified", bool(U1))
+ck("33h. it names the fields that materially determine gst_zscore",
+   {m["field"] for m in U1.get("missing_fields", [])} >=
+   {"gst_zscore_arithmetic", "baseline_window", "query_batching_comparison_method",
+    "geography_geo", "category_cat", "google_property_gprop", "timeframe",
+    "partial_weekly_period_treatment"})
+ck("33i. no gst_zscore definition exists anywhere in this study to implement",
+   "gst_zscore" not in DESIGN and "gst_zscore" not in SRC)
+ck("33j. the run STOPPED before the first request; nothing was retrieved or computed",
+   U1.get("trends_request_made") is False
+   and U1.get("trends_attempts_executed") == 0
+   and U1.get("gst_zscore_computed") is False
+   and U1.get("rule_invented_or_optimised_after_seeing_values") is False)
+ck("33k. no HYP-01 GST construct was borrowed to fill the gap",
+   U1.get("hyp01_gst_construct_not_borrowed") is True)
+ck("33l. no options, Cboe, price, return or outcome was accessed for the Trends leg",
+   U1.get("options_or_cboe_accessed") is False
+   and U1.get("outcome_accessed") is False
+   and U1.get("observation_created") is False)
+ck("33m. no Trends network client was added to the collector",
+   not re.search(r"pytrends|TrendReq|trends\.google", SRC, re.I))
+ck("33n. no completed observation and no snapshot manifest exist",
+   not C.MANIFEST.exists()
+   and all(r.get("data_class") != C.RESEARCH_CLASS for r in LEDGER_RECS))
+ck("33o. this branch depends on no teammate branch, code or data",
+   not re.search(r"import\s+(pytrends|gst_market_response)", SRC))
+
 print()
 print(f"{CHECKS - len(FAIL)} passed, {len(FAIL)} failed, {CHECKS} assertions total")
 if FAIL:

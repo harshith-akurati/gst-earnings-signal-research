@@ -1,6 +1,37 @@
 # Changelog
 
 
+## 2026-08-19 - ROST Trends leg: issuer query frozen, method gate stops before retrieval
+
+**No Google Trends request was made. No options, Cboe, price, return or earnings outcome was
+accessed. No observation exists and `snapshot_manifest.jsonl` was not created.**
+
+`QUERY_IDENTITY_RULE_FROZEN` was committed at `49ba1ba` (ledger only), resolving the gap disclosed at
+`55286ce`. The general rule, fixed before any retrieval: use the exact issuer display name from the
+official issuer IR earnings announcement; else the exact SEC registrant name for the event filing;
+never derive an issuer name by stripping words from a Nasdaq security description; if neither source
+resolves one unique name the event is ineligible; preserve source spelling and punctuation. For ROST
+this freezes `ROST stock`, `Ross Stores, Inc. stock`, and the cutoff `2026-08-18`.
+
+**Phase 2 gate: `TRENDS_METHOD_UNDERSPECIFIED`.** The frozen design fixes *what* to query and *how
+often* - the two query templates, one public sample per query per day, no in-day repetition, the T-2
+cutoff and the retained provenance fields - but it does **not** fix *how to retrieve* or *how to
+normalise*. Ten fields that materially determine `gst_zscore` are unspecified: query
+batching/comparison method, timeframe, geography, category, Google property, retry behaviour,
+aggregation rule, baseline window, the `gst_zscore` arithmetic itself, and partial-weekly-period
+treatment. **No `gst_zscore` definition exists in this study or anywhere in the repository.**
+
+HYP-01's GST construct was **not** borrowed to fill the gap: the frozen design states no HYP-01
+artifact is relied upon, and F5 remains OPEN. Per the design's own prohibition on inventing or
+optimising a rule after seeing values, collection **stopped before the first request**. The
+per-attempt archival subsystem was deliberately **not** built, since it cannot be exercised without a
+defined method.
+
+Suite: **243 assertions**, all passing, sockets blocked.
+
+**Blocker: a frozen Trends retrieval-and-normalisation method, including the exact `gst_zscore`
+arithmetic.** Tomorrow's manual Cboe options capture for ROST is unaffected.
+
 ## 2026-08-18 — Attention–Options Dislocation: manual Cboe capture replaces the blocked Alpaca lane
 
 **No observation was collected. No outcome, trade or executable-alpha claim was created.**
