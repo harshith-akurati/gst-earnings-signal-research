@@ -64,10 +64,37 @@ ALPACA_STOCK_FEED = "iex"
 ALPACA_LABEL = "ALPACA_INDICATIVE_NON_EXECUTABLE"
 ALPACA_OPTIONS_SNAPSHOT_PATH = "/v1beta1/options/snapshots/"
 
+# ---------------------------------------------------------------------------
+# Provider Amendment 2 (2026-08-18) -- PROVIDER_AMENDMENT_2026-08-18_CBOE_MANUAL.md
+#
+# Alpaca authentication failed (HTTP 401) and provider-acquisition work stopped.
+# The replacement source is the official Cboe Delayed Quotes dashboard, which
+# permits MANUAL ticker entry and CSV download but explicitly PROHIBITS automated
+# extraction.
+#
+# Therefore NO CODE HERE REQUESTS, SCRAPES, CLICKS, DOWNLOADS OR OTHERWISE ACCESSES
+# CBOE. A human downloads the file by hand; this module only reads a local file.
+# There is no Cboe URL, HTTP client, browser driver or scheduled fetch in this
+# repository, and none may be added.
+# ---------------------------------------------------------------------------
+CBOE_LABEL = "CBOE_MANUAL_DELAYED_NON_EXECUTABLE"
+CBOE_PROVIDER = "cboe_manual"
+CBOE_FEED = "delayed_quotes_manual_csv"
+CBOE_CAPTURE_METHOD = "HUMAN_MANUAL_DOWNLOAD"
+# The displayed market-data timestamp is the information cutoff. A delayed quote
+# must PRECEDE its download, and not by more than this.
+CBOE_MAX_DISPLAY_LAG_SECONDS = 3600
+
+# A feed whose prices are not executable. No executable cost, P&L or trade
+# instruction may ever be derived from a record carrying one of these.
+NON_EXECUTABLE_LABELS = frozenset()   # populated below, after ALPACA_LABEL exists
+
 SYSTEM_VALIDATION_LABEL = "NON_EVENT_SYSTEM_VALIDATION_ONLY"
 DEFERRED_EXECUTION_STATUS = "OPRA_EXECUTION_DATA_UNAVAILABLE"
 SCHEMA_INCOMPATIBLE_STATUS = "PROVIDER_SCHEMA_INCOMPATIBLE"
 STRIKE_SELECTION_METHOD = "NEAREST_STRIKE_TO_CONTEMPORANEOUS_UNDERLYING"
+
+NON_EXECUTABLE_LABELS = frozenset({ALPACA_LABEL, CBOE_LABEL})
 
 RESEARCH_CLASS = "RESEARCH"
 VALIDATION_CLASS = "SYSTEM_VALIDATION"
@@ -120,6 +147,9 @@ PERMITTED_MANIFEST_FIELDS = (
     "request_timestamp_utc", "response_status", "contract_symbol_call",
     "contract_symbol_put", "underlying_price_source", "execution_economics_status",
     "all_necessary_fields_present", "design_fields_absent",
+    # Provider Amendment 2: manual capture provenance.
+    "retrieved_at_utc", "underlying_timestamp_utc", "capture_method",
+    "source_file_name", "source_file_bytes", "source_file_sha256",
 )
 
 # Recorded by frozen design section 4 for each leg. Absence is disclosed, not hidden.
@@ -516,6 +546,13 @@ def resolve_feed(provider, latency_label, feed=None, feed_designation=None):
             raise Refused("every Alpaca record must be feed %r labelled %s"
                           % (ALPACA_OPTIONS_FEED, ALPACA_LABEL))
         return f, d
+    if p == CBOE_PROVIDER:
+        f = feed or CBOE_FEED
+        d = feed_designation or CBOE_LABEL
+        if f != CBOE_FEED or d != CBOE_LABEL:
+            raise Refused("every manual Cboe record must be feed %r labelled %s"
+                          % (CBOE_FEED, CBOE_LABEL))
+        return f, d
     d = feed_designation or latency_label
     if not d:
         raise Refused("feed designation is mandatory provenance")
@@ -532,6 +569,15 @@ def assert_provider_provenance(rec):
             raise Refused("Alpaca record declares feed %r" % (rec.get("feed"),))
         if rec.get("feed_designation") != ALPACA_LABEL:
             raise Refused("every Alpaca record must carry %s" % ALPACA_LABEL)
+    if str(rec["provider"]) == CBOE_PROVIDER:
+        if rec.get("feed_designation") != CBOE_LABEL:
+            raise Refused("every manual Cboe record must carry %s" % CBOE_LABEL)
+        if rec.get("capture_method") != CBOE_CAPTURE_METHOD:
+            raise Refused("a Cboe record must declare capture_method %s"
+                          % CBOE_CAPTURE_METHOD)
+        for f in ("source_file_sha256", "source_file_name", "retrieved_at_utc"):
+            if not str(rec.get(f) or "").strip():
+                raise Refused("manual capture is missing %r" % (f,))
     return True
 
 
@@ -553,7 +599,7 @@ def assert_no_executable_claim(rec):
     No executable price, spread-aware alpha or realized-straddle-P&L field may be
     emitted while the provider is Alpaca's indicative feed.
     """
-    if str(rec.get("provider") or "").startswith("alpaca"):
+    if rec.get("feed_designation") in NON_EXECUTABLE_LABELS:
         bad = sorted(k for k in rec if EXECUTABLE_CLAIM_FIELD.search(k))
         if bad:
             raise Refused("%s: executable / spread-aware / straddle-P&L fields are "
@@ -633,7 +679,8 @@ def record_id(rec):
         str(rec["quote_timestamp_utc"])]).encode())[:32]
 
 
-def existing_identities(path=MANIFEST):
+def existing_identities(path=None):
+    path = Path(path) if path else MANIFEST
     ids = set()
     if path.exists():
         for line in path.read_text(encoding="utf-8").splitlines():
@@ -649,7 +696,10 @@ def build_record(*, ticker, issuer_name, event_date, session, underlying_price, 
                  raw_sha256, search_features, universe_source_kind,
                  snapshot_timestamp_utc=None, feed=None, feed_designation=None,
                  request_timestamp_utc=None, response_status=None,
-                 underlying_price_source=None):
+                 underlying_price_source=None, retrieved_at_utc=None,
+                 underlying_timestamp_utc=None, capture_method=None,
+                 source_file_name=None, source_file_bytes=None,
+                 source_file_sha256=None):
     """Assemble one sanitized manifest record, refusing anything that breaks a rule.
 
     The frozen contract-selection and implied-move arithmetic below is UNCHANGED by
@@ -697,6 +747,18 @@ def build_record(*, ticker, issuer_name, event_date, session, underlying_price, 
         rec["response_status"] = int(response_status)
     if underlying_price_source:
         rec["underlying_price_source"] = str(underlying_price_source)
+    if retrieved_at_utc:
+        rec["retrieved_at_utc"] = str(retrieved_at_utc)
+    if underlying_timestamp_utc:
+        rec["underlying_timestamp_utc"] = str(underlying_timestamp_utc)
+    if capture_method:
+        rec["capture_method"] = str(capture_method)
+    if source_file_name:
+        rec["source_file_name"] = str(source_file_name)
+    if source_file_bytes is not None:
+        rec["source_file_bytes"] = int(source_file_bytes)
+    if source_file_sha256:
+        rec["source_file_sha256"] = str(source_file_sha256)
     if call_row.get("occ_symbol"):
         rec["contract_symbol_call"] = str(call_row["occ_symbol"])
     if put_row.get("occ_symbol"):
@@ -705,7 +767,7 @@ def build_record(*, ticker, issuer_name, event_date, session, underlying_price, 
     # ---- frozen arithmetic, unchanged --------------------------------------
     rec["midpoint_implied_move"] = implied_move(rec["call_mid"], rec["put_mid"],
                                                 underlying_price)
-    if str(provider).startswith("alpaca"):
+    if feed_designation in NON_EXECUTABLE_LABELS:
         # Amendment 1 section 7: deferred, not deleted. No executable price, no
         # spread cost and no straddle P&L is derived from an indicative quote.
         rec["execution_economics_status"] = DEFERRED_EXECUTION_STATUS
@@ -731,7 +793,7 @@ def build_record(*, ticker, issuer_name, event_date, session, underlying_price, 
     return rec
 
 
-def append_record(rec, path=MANIFEST):
+def append_record(rec, path=None):
     """Append-only research panel. A duplicate identity is refused, never overwritten.
 
     Every gate is re-applied here, so a record cannot reach the panel by being built
@@ -741,6 +803,7 @@ def append_record(rec, path=MANIFEST):
     assert_provider_provenance(rec)
     assert_research_grade(rec)
     assert_no_executable_claim(rec)
+    path = Path(path) if path else MANIFEST
     ident = (rec["ticker"], rec["event_date"], rec["provider"], rec["quote_timestamp_utc"])
     if ident in existing_identities(path):
         raise Refused(f"duplicate identity refused: {ident}")
@@ -986,6 +1049,314 @@ def mode_validate(argv=None):
     for b in bad:
         print("  " + b)
     return 1 if bad else 0
+
+
+# ------------------------------------------------- manual Cboe local-file import
+#
+# NO NETWORK. This section reads a file a HUMAN downloaded by hand from the
+# official Cboe Delayed Quotes dashboard. Cboe prohibits automated extraction, so
+# there is deliberately no Cboe URL, no HTTP call, no browser driver and no
+# download step anywhere in this repository.
+
+CBOE_TS_PATTERNS = (
+    "%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M",
+    "%a %b %d %H:%M:%S %Z %Y", "%m/%d/%Y %H:%M:%S", "%m/%d/%Y %H:%M",
+)
+
+
+def parse_display_timestamp(text):
+    """Parse the page-displayed market-data timestamp. Never guessed."""
+    t = str(text or "").strip().strip('"')
+    if not t:
+        raise Refused("displayed market-data timestamp is missing")
+    try:
+        return parse_rfc3339(t)
+    except Refused:
+        pass
+    for fmt in CBOE_TS_PATTERNS:
+        try:
+            d = datetime.strptime(t, fmt)
+            return d if d.tzinfo else d.replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+    raise Refused("unparseable displayed market-data timestamp: %r" % (text,))
+
+
+def _cboe_header_index(rows):
+    """Locate the quote table header. Refuse rather than guess at the layout."""
+    for i, r in enumerate(rows):
+        low = [c.strip().lower() for c in r]
+        if "strike" in low and "calls" in low and "puts" in low:
+            return i, low
+    raise Refused("the file has no recognisable Cboe options table header "
+                  "(expected columns including Calls, Strike and Puts); refusing "
+                  "rather than guessing at the layout")
+
+
+def parse_cboe_csv(raw, expected_ticker):
+    """Parse a manually downloaded Cboe delayed-quotes CSV.
+
+    Returns (rows, meta). Layout follows Cboe's published table: every column left
+    of `Strike` describes the CALL, every column right of it the PUT. Anything the
+    file does not state is left absent -- nothing is inferred or imputed.
+    """
+    text = raw.decode("utf-8-sig", "replace")
+    rows = list(csv.reader(io.StringIO(text)))
+    if not rows:
+        raise Refused("the file is empty")
+    hi, header = _cboe_header_index(rows)
+
+    meta = {}
+    blob = "\n".join(",".join(r) for r in rows[:hi])
+    m = re.search(r"(?:last\s*updated|as\s*of|date/time|timestamp)\s*[:,]\s*"
+                  r"([^,\n]+)", blob, re.I)
+    if m:
+        meta["display_timestamp"] = m.group(1).strip()
+    m = re.search(r"(?:underlying|last)\s*(?:price|sale)?\s*[:,]\s*\$?"
+                  r"([0-9]+\.?[0-9]*)", blob, re.I)
+    if m:
+        meta["underlying_price"] = _num(m.group(1))
+
+    # The file must name the ticker it is for; a file for another name is refused.
+    up = blob.upper()
+    tick = str(expected_ticker).upper()
+    if not re.search(r"\b%s\b" % re.escape(tick), up):
+        raise Refused("this file does not identify ticker %r in its header; wrong "
+                      "file for this event" % (tick,))
+
+    si = header.index("strike")
+    ci, pi = header.index("calls"), header.index("puts")
+    if not (ci < si < pi):
+        raise Refused("unexpected Cboe column order (Calls must precede Strike, "
+                      "Strike must precede Puts); refusing rather than guessing")
+
+    def pick(seg_lo, seg_hi, *names):
+        for n in names:
+            for j in range(seg_lo, seg_hi):
+                if header[j] == n:
+                    return j
+        return None
+
+    exp_i = pick(0, len(header), "expiration date", "expiration", "exp date")
+    if exp_i is None:
+        raise Refused("no expiration column in the Cboe file")
+    idx = {
+        "call_bid": pick(ci, si, "bid"), "call_ask": pick(ci, si, "ask"),
+        "call_last": pick(ci, si, "last sale", "last"),
+        "call_volume": pick(ci, si, "volume"),
+        "call_open_interest": pick(ci, si, "open interest"),
+        "call_iv": pick(ci, si, "iv", "implied volatility"),
+        "put_bid": pick(si, len(header), "bid"),
+        "put_ask": pick(si, len(header), "ask"),
+        "put_last": pick(si, len(header), "last sale", "last"),
+        "put_volume": pick(si, len(header), "volume"),
+        "put_open_interest": pick(si, len(header), "open interest"),
+        "put_iv": pick(si, len(header), "iv", "implied volatility"),
+    }
+    for k in ("call_bid", "call_ask", "put_bid", "put_ask"):
+        if idx[k] is None:
+            raise Refused("the Cboe file has no %s column; a missing side is never "
+                          "replaced by a last price" % k.replace("_", " "))
+
+    out, seen = [], set()
+    for r in rows[hi + 1:]:
+        if len(r) <= max(si, pi, exp_i):
+            continue
+        strike = _num(r[si])
+        exp = str(r[exp_i]).strip()
+        if strike is None or not exp:
+            continue
+        try:
+            exp = _cboe_date(exp)
+        except Refused:
+            continue
+        key = (exp, strike)
+        if key in seen:
+            raise Refused("duplicate contract row for expiration %s strike %s"
+                          % (exp, strike))
+        seen.add(key)
+        row = {"expiration_date": exp, "strike": strike}
+        for k, j in idx.items():
+            row[k] = _num(r[j]) if j is not None and len(r) > j else None
+        out.append(row)
+    if not out:
+        raise Refused("the Cboe file contains no parseable contract rows")
+    return out, meta
+
+
+def _cboe_date(t):
+    t = str(t).strip()
+    for fmt in ("%Y-%m-%d", "%m/%d/%Y", "%b %d %Y", "%d-%b-%Y", "%Y/%m/%d"):
+        try:
+            return datetime.strptime(t, fmt).date().isoformat()
+        except ValueError:
+            continue
+    raise Refused("unparseable expiration date: %r" % (t,))
+
+
+def cboe_legs(rows, exp, strike):
+    """Split one Cboe wide row into the frozen internal call/put leg schema."""
+    hit = [r for r in rows if r["expiration_date"] == exp and r["strike"] == strike]
+    if len(hit) != 1:
+        raise Refused("expected exactly one row at %s / %s, found %d"
+                      % (exp, strike, len(hit)))
+    r = hit[0]
+    legs = []
+    for kind in ("call", "put"):
+        legs.append({
+            "expiration_date": exp, "strike": strike, "option_type": kind,
+            "bid": r["%s_bid" % kind], "ask": r["%s_ask" % kind],
+            "last": r["%s_last" % kind], "volume": r["%s_volume" % kind],
+            "open_interest": r["%s_open_interest" % kind],
+            "iv": r["%s_iv" % kind],
+        })
+    return legs
+
+
+def assert_unambiguous_atm(strikes, underlying_price):
+    """Refuse an ambiguous ATM: two strikes exactly equidistant from the underlying."""
+    if not strikes:
+        raise Refused("no strikes available for ATM selection")
+    d = sorted((abs(s - underlying_price), s) for s in set(strikes))
+    if len(d) > 1 and abs(d[0][0] - d[1][0]) < 1e-9:
+        raise Refused("ambiguous ATM selection: strikes %s and %s are equidistant "
+                      "from the underlying %s" % (d[0][1], d[1][1], underlying_price))
+    return d[0][1]
+
+
+def assert_delayed_display_timing(display_utc, retrieved_utc,
+                                  max_lag=CBOE_MAX_DISPLAY_LAG_SECONDS):
+    """Amendment 2: the DISPLAYED timestamp is the cutoff, and it must precede the
+    download. Equal or later is refused; too far behind is stale."""
+    lag = (retrieved_utc - display_utc).total_seconds()
+    if lag <= 0:
+        raise Refused("displayed market-data timestamp is not earlier than the "
+                      "retrieval timestamp (lag %.0fs); a delayed quote must "
+                      "precede its download" % lag)
+    if lag > max_lag:
+        raise Refused("displayed market-data timestamp is stale by %.0fs "
+                      "(limit %ds)" % (lag, max_lag))
+    return True
+
+
+def mode_cboe_import(argv):
+    """Import ONE manually downloaded Cboe delayed-quotes CSV. No network access.
+
+    A human opened the official Cboe Delayed Quotes dashboard, typed the ticker and
+    clicked Download CSV. This reads only that local file.
+    """
+    ap = argparse.ArgumentParser(prog="cboe-import")
+    ap.add_argument("--ticker", required=True)
+    ap.add_argument("--issuer", default="")
+    ap.add_argument("--event-date", required=True)
+    ap.add_argument("--event-session", required=True,
+                    choices=["AMC", "BMO", "amc", "bmo"])
+    ap.add_argument("--retrieved-at", required=True,
+                    help="UTC timestamp of the MANUAL download")
+    ap.add_argument("--csv", required=True, help="path to the manually saved file")
+    ap.add_argument("--quote-timestamp", default=None,
+                    help="page-displayed market-data timestamp, if not in the file")
+    ap.add_argument("--underlying-timestamp", default=None)
+    ap.add_argument("--underlying-price", default=None, type=float)
+    ap.add_argument("--timing-confirmed", default=None,
+                    help="issuer release or SEC filing confirming date AND session")
+    a = ap.parse_args(argv)
+    session = a.event_session.upper()
+    print("CBOE MANUAL IMPORT  [%s]" % CBOE_LABEL)
+    print("  no network access is performed; this reads a local file only")
+    try:
+        if not a.timing_confirmed:
+            raise Refused("event timing is %s until confirmed against an issuer "
+                          "release or SEC filing; pass --timing-confirmed"
+                          % SCHEDULING_LABEL)
+        src = Path(a.csv)
+        if not src.is_file():
+            raise Refused("no such file: %s" % src)
+        raw = src.read_bytes()
+        digest, nbytes = sha256_bytes(raw), len(raw)
+        print("  source file            %s" % src.name)
+        print("  bytes                  %d" % nbytes)
+        print("  sha256                 %s" % digest)
+
+        retrieved = parse_rfc3339(a.retrieved_at)
+        rows, meta = parse_cboe_csv(raw, a.ticker)
+        display = parse_display_timestamp(a.quote_timestamp
+                                          or meta.get("display_timestamp"))
+        under_ts = (parse_rfc3339(a.underlying_timestamp)
+                    if a.underlying_timestamp else display)
+        px = a.underlying_price if a.underlying_price is not None \
+            else meta.get("underlying_price")
+        if px is None or px <= 0:
+            raise Refused("no usable underlying price; supply --underlying-price")
+
+        assert_delayed_display_timing(display, retrieved)
+        assert_in_snapshot_window(retrieved.astimezone(ET), a.event_date, session)
+
+        exp = first_expiration_after({r["expiration_date"] for r in rows},
+                                     a.event_date)
+        at_exp = [r for r in rows if r["expiration_date"] == exp]
+        k = assert_unambiguous_atm([r["strike"] for r in at_exp], px)
+        if abs(k - nearest_strike(
+                [{"strike": r["strike"]} for r in at_exp], px)) > 1e-9:
+            raise Refused("ATM selection disagrees with the frozen nearest-strike rule")
+        legs = cboe_legs(at_exp, exp, k)
+        for lg in legs:
+            if lg["bid"] is None or lg["ask"] is None:
+                raise Refused("%s leg missing bid or ask; last-price substitution "
+                              "is prohibited" % lg["option_type"])
+            if lg["bid"] < 0 or lg["ask"] <= 0:
+                raise Refused("%s leg has a negative or non-positive quote"
+                              % lg["option_type"])
+            if lg["bid"] > lg["ask"]:
+                raise Refused("%s leg crossed market" % lg["option_type"])
+
+        rec = build_record(
+            ticker=a.ticker.upper(), issuer_name=a.issuer or a.ticker.upper(),
+            event_date=a.event_date, session=session, underlying_price=float(px),
+            chain=legs, expirations={r["expiration_date"] for r in rows},
+            quote_timestamp_utc=utc_second_stamp(display),
+            provider=CBOE_PROVIDER, latency_label=CBOE_LABEL,
+            feed=CBOE_FEED, feed_designation=CBOE_LABEL,
+            raw_sha256=digest, search_features=[],
+            universe_source_kind=(_committed_universe() or {}).get(
+                "source_kind", "UNKNOWN"),
+            retrieved_at_utc=utc_second_stamp(retrieved),
+            underlying_timestamp_utc=utc_second_stamp(under_ts),
+            capture_method=CBOE_CAPTURE_METHOD,
+            source_file_name=src.name, source_file_bytes=nbytes,
+            source_file_sha256=digest,
+            underlying_price_source="cboe_delayed_manual")
+
+        CACHE.mkdir(parents=True, exist_ok=True)
+        kept = CACHE / ("cboe_%s_%s_%s.csv" % (a.ticker.upper(), a.event_date,
+                                               digest[:12]))
+        kept.write_bytes(raw)
+        append_provenance({
+            "data_class": PROVENANCE_CLASS, "record_type": "cboe_manual_file",
+            "label": CBOE_LABEL, "provider": CBOE_PROVIDER, "feed": CBOE_FEED,
+            "capture_method": CBOE_CAPTURE_METHOD, "ticker": a.ticker.upper(),
+            "event_date": str(a.event_date), "source_file_name": src.name,
+            "source_file_bytes": nbytes, "source_file_sha256": digest,
+            "retrieved_at_utc": utc_second_stamp(retrieved),
+            "displayed_quote_timestamp_utc": utc_second_stamp(display),
+            "underlying_timestamp_utc": utc_second_stamp(under_ts),
+            "preserved_repository_external": str(kept),
+            "automated_access_to_cboe": False,
+        })
+        rid = append_record(rec)
+    except Refused as e:
+        print("  REFUSED:", redact(e))
+        return 3
+    except Exception as e:                                    # noqa: BLE001
+        print("  ERROR:", redact("%s: %s" % (type(e).__name__, e)))
+        return 1
+    print("  original preserved repository-external: %s" % kept)
+    print("  RECORDED record_id=%s expiration=%s strike=%s" % (rid, rec["expiration"],
+                                                               rec["strike"]))
+    print("  displayed quote ts %s | retrieved %s (recorded separately)"
+          % (rec["quote_timestamp_utc"], rec["retrieved_at_utc"]))
+    print("  no executable cost, simulated P&L or trade instruction was emitted.")
+    return 0
 
 
 def mode_alpaca_check(argv=None):
@@ -1353,15 +1724,15 @@ def mode_readiness(argv=None):
 MODES = {"doctor": mode_doctor, "calendar": mode_calendar,
          "snapshot": mode_snapshot, "validate": mode_validate,
          "alpaca-check": mode_alpaca_check, "universe": mode_universe,
-         "readiness": mode_readiness}
+         "readiness": mode_readiness, "cboe-import": mode_cboe_import}
 
 
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     if not argv or argv[0] not in MODES:
         print("usage: collect_attention_options_snapshot.py "
-              "{doctor|calendar|alpaca-check|universe|readiness|snapshot|validate} "
-              "[options]")
+              "{doctor|calendar|alpaca-check|universe|readiness|cboe-import|"
+              "snapshot|validate} [options]")
         return 2
     return MODES[argv[0]](argv[1:])
 

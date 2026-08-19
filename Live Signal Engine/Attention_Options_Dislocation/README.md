@@ -30,7 +30,59 @@ python tools/collect_attention_options_snapshot.py validate
 | `snapshot` | Timestamped pre-event input snapshot. Refuses outside the 15:45 ET window, on the wrong snapshot day, without a provider credential, or without issuer/SEC-confirmed event timing. |
 | `validate` | Re-checks stored records: schema, provenance, labels, timestamps, hashes, uniqueness, pre-event eligibility. |
 
-## Provider (amended 2026-08-17)
+## Provider (amended 2026-08-18) — MANUAL Cboe capture
+
+Per `PROVIDER_AMENDMENT_2026-08-18_CBOE_MANUAL.md`, Alpaca is abandoned (HTTP 401, credentials
+rejected) and **no further account, identity, credential or API-provider work will be attempted**.
+The source is now the **official Cboe Delayed Quotes dashboard**.
+
+> ## ⚠ BROWSER AUTOMATION, HTTP REQUESTS, SCRAPING AND PROGRAMMATIC CSV DOWNLOADING ARE PROHIBITED.
+>
+> Cboe permits a **person** to type a ticker and click **Download CSV**. Cboe's terms **explicitly
+> prohibit automated extraction**. There is **no Cboe URL, HTTP client, browser driver, headless
+> browser, scheduled fetch or retry loop anywhere in this repository, and none may be added.**
+> The software only ever reads a file a human already saved to local disk.
+
+Every accepted record is labelled **`CBOE_MANUAL_DELAYED_NON_EXECUTABLE`**. The **page-displayed
+market-data timestamp — not the download time — is the information cutoff**; both are recorded
+separately. Delayed quotes may test forecast improvement against an options-implied benchmark; they
+**cannot** establish executable bids/asks, spread-adjusted P&L or tradeable options alpha, and the
+importer refuses to emit any of them.
+
+### Human runbook
+
+1. **Confirm the earnings date and AMC/BMO timing** from the issuer's official investor-relations
+   page or an SEC filing. A vendor calendar is `SCHEDULING_INPUT_UNVERIFIED` and is never sufficient.
+2. At the frozen collection time (**15:45 ET** on the snapshot day), **manually open** Cboe's
+   delayed-quotes page in a browser: <https://www.cboe.com/delayed_quotes/>
+3. **Manually type the ticker** into the page.
+4. **Select the required expiration** (the first expiration strictly after the event) and a
+   **near-the-money strike range** around the current underlying price.
+5. Click **"Download CSV."**
+6. **Immediately record two things**: the **displayed quote timestamp** shown on the page, and the
+   **UTC download timestamp**.
+7. Run the local importer (below).
+8. **Preserve the downloaded file outside Git.** The importer copies it to the repository-external
+   cache; never commit a raw file.
+9. **Verify the result**: the importer either appends exactly one valid observation or refuses with
+   an explicit reason. A refusal is a real answer — do not retry with looser inputs.
+
+### Importer
+
+```
+python tools/collect_attention_options_snapshot.py cboe-import        --ticker TICKER --event-date YYYY-MM-DD --event-session AMC        --retrieved-at 2026-08-20T19:45:00Z --csv /path/to/manual_download.csv        --quote-timestamp "2026-08-20 19:40:00" --underlying-price 186.00        --timing-confirmed https://issuer.example/ir/press-release
+```
+
+It performs **no network access**. It records the filename, byte count and SHA-256 in the
+append-only provenance ledger, applies the **already-frozen** expiration and nearest-strike rules and
+the **unmodified** implied-move arithmetic, records the option and underlying timestamps separately,
+and refuses on: wrong ticker, wrong event, missing calls or puts, duplicate contracts, crossed or
+negative quotes, missing timestamps, stale data, wrong expiration, ambiguous ATM selection, retrieval
+outside the frozen window, a displayed timestamp that does not precede its download, or unconfirmed
+event timing.
+
+## Provider history (amended 2026-08-17) — Alpaca, failed
+
 
 Per `PROVIDER_AMENDMENT_2026-08-17_ALPACA.md`, the options provider is **Alpaca Paper Only** on its
 free **`indicative`** feed. Tradier stays unavailable because its tokens require brokerage

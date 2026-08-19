@@ -273,9 +273,11 @@ ck("5a. sandbox selection yields the delayed label",
    C.options_provider({"TRADIER_SANDBOX_TOKEN": "x"})[2] == "DELAYED_15_MINUTES")
 ck("5b. real-time token is preferred over sandbox",
    C.options_provider({"TRADIER_TOKEN": "x", "TRADIER_SANDBOX_TOKEN": "y"})[0] == "tradier")
-ck("5c. no token -> no provider, and no scraping fallback exists",
+ck("5c. no token -> no provider, and no scraped substitute exists",
    C.options_provider({})[0] is None
-   and not re.search(r"(cboe|yahoo|marketchameleon|barchart)", SRC, re.I))
+   and not re.search(r"(yahoo|marketchameleon|barchart|slickcharts)", SRC, re.I)
+   # Cboe is permitted ONLY as a human-downloaded local file; no automated access
+   and not any("cboe" in u.lower() for u in url_literals(SRC)))
 ck("5d. the delayed label is carried on the record",
    R["quote_latency_label"] == "DELAYED_15_MINUTES")
 
@@ -758,6 +760,255 @@ ck("22a. no research manifest exists -- no observation has been collected",
 ck("22b. nothing in the provenance ledger is a study observation",
    all(r.get("data_class") in (C.VALIDATION_CLASS, C.PROVENANCE_CLASS)
        for r in LEDGER_RECS))
+
+
+# ==========================================================================
+# Provider Amendment 2 (2026-08-18) -- manual, official Cboe delayed capture
+# ==========================================================================
+AMEND2_REL = ("Live Signal Engine/Attention_Options_Dislocation/"
+              "PROVIDER_AMENDMENT_2026-08-18_CBOE_MANUAL.md")
+AMEND2_PATH = ROOT / AMEND2_REL
+AMEND2 = AMEND2_PATH.read_text(encoding="utf-8") if AMEND2_PATH.exists() else ""
+
+CBOE_HEADER = ("Expiration Date,Calls,Last Sale,Net,Bid,Ask,Volume,IV,Delta,Gamma,"
+               "Open Interest,Strike,Puts,Last Sale,Net,Bid,Ask,Volume,IV,Delta,"
+               "Gamma,Open Interest")
+
+
+def cboe_csv(ticker="ZZZ", display="2026-08-20 19:40:00", price="186.00",
+             exps=("2026-08-14", "2026-08-28", "2026-09-18"),
+             strikes=(180.0, 185.0, 190.0), cbid="4.0", cask="4.4",
+             pbid="3.6", pask="4.0", dupe=False, extra_rows=()):
+    out = [f"{ticker} Zeta Systems Common Stock",
+           f"Last Updated: {display}",
+           f"Underlying Price: {price}",
+           "", CBOE_HEADER]
+    for e in exps:
+        for k in strikes:
+            out.append(f"{e},{ticker}C,99.0,0,{cbid},{cask},120,0.55,0.5,0.01,900,"
+                       f"{k},{ticker}P,99.0,0,{pbid},{pask},120,0.55,-0.5,0.01,900")
+            if dupe and e == "2026-08-28" and k == 185.0:
+                out.append(out[-1])
+    out.extend(extra_rows)
+    return ("\n".join(out) + "\n").encode("utf-8")
+
+
+def run_import(tmpdir, raw=None, **over):
+    """Invoke the importer exactly as a human would, with sockets blocked."""
+    d = Path(tmpdir)
+    f = d / "cboe_download.csv"
+    f.write_bytes(raw if raw is not None else cboe_csv())
+    args = {"--ticker": "ZZZ", "--event-date": "2026-08-20",
+            "--event-session": "AMC", "--retrieved-at": "2026-08-20T19:45:00Z",
+            "--csv": str(f), "--timing-confirmed": "https://example.invalid/8-K"}
+    args.update(over)
+    argv = []
+    for k, v in args.items():
+        if v is not None:
+            argv += [k, str(v)]
+    real = C.MANIFEST
+    C.MANIFEST = d / "manifest.jsonl"
+    real_led = C.PROVENANCE_LEDGER
+    C.PROVENANCE_LEDGER = d / "prov.jsonl"
+    real_cache = C.CACHE
+    C.CACHE = d / "cache"
+    buf = io.StringIO()
+    try:
+        with redirect_stdout(buf):
+            code = C.mode_cboe_import(argv)
+        return code, buf.getvalue(), C.MANIFEST
+    finally:
+        C.MANIFEST, C.PROVENANCE_LEDGER, C.CACHE = real, real_led, real_cache
+
+
+# --------------------------------------------- 23. amendment 2 precedence
+A2_ADD = [x for x in git("log", "--diff-filter=A", "--format=%H", "--",
+                         AMEND2_REL).splitlines() if x.strip()]
+A2_SHA = A2_ADD[-1] if A2_ADD else ""
+ck("23a. Amendment 2 is committed", bool(A2_SHA) and bool(AMEND2))
+ck("23b. its commit changed exactly one path",
+   len([x for x in git("show", "--name-only", "--format=", A2_SHA).splitlines()
+        if x.strip()]) == 1)
+ck("23c. the collector had no cboe-import at that commit",
+   "cboe" not in git("show",
+                     f"{A2_SHA}:tools/collect_attention_options_snapshot.py").lower())
+ck("23d. no observation existed when it was frozen, so no file preceded it",
+   not C.MANIFEST.exists())
+ck("23e. it states the 401, the manual-only rule and the timestamp rule",
+   "401" in AMEND2 and "prohibit" in AMEND2.lower()
+   and "Download CSV" in AMEND2 and C.CBOE_LABEL in AMEND2)
+ck("23f. it leaves model, features, selection rule and metric unchanged",
+   "unchanged" in AMEND2.lower() and "No outcome" in AMEND2)
+ck("23g. neither the design nor Amendment 1 was rewritten",
+   hashlib.sha256(DESIGN_BYTES).hexdigest() == FROZEN_DESIGN_SHA256
+   and len([x for x in git("log", "--format=%H", "--", AMEND_REL).splitlines()
+            if x.strip()]) == 1)
+
+# --------------------------------------------------- 24. zero network access
+ck("24a. no Cboe URL literal exists anywhere in the collector",
+   not any("cboe" in u.lower() for u in url_literals(SRC)))
+ck("24b. no browser-automation or scraping dependency is present",
+   not re.search(r"selenium|playwright|webdriver|puppeteer|beautifulsoup|bs4|"
+                 r"requests_html|mechanize", SRC, re.I))
+ck("24c. the import path issues no HTTP call at all",
+   not re.search(r"(urlopen|http_json|alpaca_get|requests\.)",
+                 SRC.split("def mode_cboe_import")[1].split("\ndef ")[0]))
+with tempfile.TemporaryDirectory() as td:
+    code, out, man = run_import(td)
+    ck("24d. a valid manual file imports with sockets blocked", code == 0, out)
+    IMPORTED = [json.loads(x) for x in
+                man.read_text(encoding="utf-8").splitlines() if x.strip()]
+ck("24e. the importer never printed a network action",
+   "http" not in out.lower().replace("https://example.invalid/8-k", ""))
+
+# ------------------------------------------- 25. label, provenance, arithmetic
+IR = IMPORTED[0]
+ck("25a. the manual-source label is carried",
+   IR["feed_designation"] == "CBOE_MANUAL_DELAYED_NON_EXECUTABLE"
+   and IR["provider"] == "cboe_manual")
+ck("25b. the capture method is recorded as a human download",
+   IR["capture_method"] == "HUMAN_MANUAL_DOWNLOAD")
+ck("25c. filename, byte count and SHA-256 are recorded",
+   IR["source_file_name"] == "cboe_download.csv"
+   and IR["source_file_bytes"] == len(cboe_csv())
+   and re.fullmatch(r"[0-9a-f]{64}", IR["source_file_sha256"]))
+ck("25d. the SHA-256 is deterministic and content-addressed",
+   C.sha256_bytes(cboe_csv()) == IR["source_file_sha256"]
+   and C.sha256_bytes(cboe_csv()) != C.sha256_bytes(cboe_csv(price="187.00")))
+ck("25e. a record stripped of the label is refused",
+   refuses(lambda: C.assert_provider_provenance(dict(IR, feed_designation="LIVE"))))
+ck("25f. a record without capture provenance is refused",
+   refuses(lambda: C.assert_provider_provenance(dict(IR, source_file_sha256=""))))
+ck("25g. the frozen implied-move arithmetic is applied unmodified",
+   abs(IR["midpoint_implied_move"] - (4.2 + 3.8) / 186.0) < 1e-12
+   and IR["call_mid"] == 4.2 and IR["put_mid"] == 3.8)
+
+# ------------------------------------- 26. expiration and ATM selection
+ck("26a. the first expiration strictly after the event is selected",
+   IR["expiration"] == "2026-08-28")
+ck("26b. the nearest strike to the underlying is selected", IR["strike"] == 185.0)
+ck("26c. an ambiguous ATM (equidistant strikes) is refused",
+   refuses(lambda: C.assert_unambiguous_atm([180.0, 190.0], 185.0)))
+ck("26d. an unambiguous ATM resolves",
+   C.assert_unambiguous_atm([180.0, 185.0, 190.0], 186.0) == 185.0)
+with tempfile.TemporaryDirectory() as td:
+    code, out, _ = run_import(td, raw=cboe_csv(strikes=(180.0, 190.0)),
+                              **{"--underlying-price": "185.0"})
+    ck("26e. the importer refuses an ambiguous ATM file", code == 3)
+with tempfile.TemporaryDirectory() as td:
+    code, out, _ = run_import(td, raw=cboe_csv(exps=("2026-08-14",)))
+    ck("26f. a file with no expiration after the event is refused", code == 3)
+
+# ------------------------------ 27. displayed timestamp vs retrieval timestamp
+ck("27a. both timestamps are recorded separately",
+   IR["quote_timestamp_utc"] == "2026-08-20T19:40:00Z"
+   and IR["retrieved_at_utc"] == "2026-08-20T19:45:00Z"
+   and IR["quote_timestamp_utc"] != IR["retrieved_at_utc"])
+ck("27b. the underlying timestamp is recorded separately from retrieval",
+   "underlying_timestamp_utc" in IR
+   and IR["underlying_timestamp_utc"] != IR["retrieved_at_utc"])
+ck("27c. a displayed timestamp later than retrieval is refused",
+   refuses(lambda: C.assert_delayed_display_timing(
+       datetime(2026, 8, 20, 19, 50, tzinfo=timezone.utc),
+       datetime(2026, 8, 20, 19, 45, tzinfo=timezone.utc))))
+ck("27d. a displayed timestamp equal to retrieval is refused",
+   refuses(lambda: C.assert_delayed_display_timing(
+       datetime(2026, 8, 20, 19, 45, tzinfo=timezone.utc),
+       datetime(2026, 8, 20, 19, 45, tzinfo=timezone.utc))))
+ck("27e. a displayed timestamp beyond the staleness bound is refused",
+   refuses(lambda: C.assert_delayed_display_timing(
+       datetime(2026, 8, 20, 17, 0, tzinfo=timezone.utc),
+       datetime(2026, 8, 20, 19, 45, tzinfo=timezone.utc))))
+ck("27f. a properly delayed timestamp is accepted",
+   C.assert_delayed_display_timing(
+       datetime(2026, 8, 20, 19, 30, tzinfo=timezone.utc),
+       datetime(2026, 8, 20, 19, 45, tzinfo=timezone.utc)))
+with tempfile.TemporaryDirectory() as td:
+    code, _, _ = run_import(td, raw=cboe_csv(display="2026-08-20 17:00:00"))
+    ck("27g. the importer refuses a stale file", code == 3)
+ck("27h. a missing displayed timestamp is refused",
+   refuses(lambda: C.parse_display_timestamp("")))
+
+# ------------------------------- 28. wrong ticker / missing / crossed / duplicate
+with tempfile.TemporaryDirectory() as td:
+    code, _, _ = run_import(td, raw=cboe_csv(ticker="QQQQ"))
+    ck("28a. a file for the wrong ticker is refused", code == 3)
+with tempfile.TemporaryDirectory() as td:
+    code, _, _ = run_import(td, raw=cboe_csv(cbid=""))
+    ck("28b. a missing call bid is refused, never replaced by last", code == 3)
+with tempfile.TemporaryDirectory() as td:
+    code, _, _ = run_import(td, raw=cboe_csv(pask=""))
+    ck("28c. a missing put ask is refused", code == 3)
+with tempfile.TemporaryDirectory() as td:
+    code, _, _ = run_import(td, raw=cboe_csv(cbid="9.0", cask="1.0"))
+    ck("28d. a crossed market is refused", code == 3)
+with tempfile.TemporaryDirectory() as td:
+    code, _, _ = run_import(td, raw=cboe_csv(pbid="-1.0"))
+    ck("28e. a negative quote is refused", code == 3)
+with tempfile.TemporaryDirectory() as td:
+    code, _, _ = run_import(td, raw=cboe_csv(dupe=True))
+    ck("28f. duplicate contract rows are refused", code == 3)
+with tempfile.TemporaryDirectory() as td:
+    code, _, _ = run_import(td, raw=b"not,a,cboe,file\n1,2,3,4\n")
+    ck("28g. an unrecognisable layout is refused rather than guessed", code == 3)
+with tempfile.TemporaryDirectory() as td:
+    code, _, _ = run_import(td, **{"--timing-confirmed": None})
+    ck("28h. import without issuer/SEC-confirmed timing is refused", code == 3)
+
+# --------------------------- 29. wrong window / post-announcement / append-only
+with tempfile.TemporaryDirectory() as td:
+    code, _, _ = run_import(td, **{"--retrieved-at": "2026-08-20T17:00:00Z"})
+    ck("29a. a retrieval outside the frozen 15:45 ET window is refused", code == 3)
+with tempfile.TemporaryDirectory() as td:
+    code, _, _ = run_import(td, **{"--event-date": "2026-08-21"})
+    ck("29b. a retrieval on the wrong snapshot day is refused", code == 3)
+with tempfile.TemporaryDirectory() as td:
+    code, _, _ = run_import(td, raw=cboe_csv(display="2026-08-20 20:30:00"),
+                            **{"--retrieved-at": "2026-08-20T20:35:00Z"})
+    ck("29c. a post-announcement displayed quote is refused", code == 3)
+with tempfile.TemporaryDirectory() as td:
+    code, out, man = run_import(td)
+    before = man.read_bytes()
+    C.MANIFEST, keep = man, C.MANIFEST
+    try:
+        ck("29d. re-importing the same observation is refused as a duplicate",
+           refuses(lambda: C.append_record(IMPORTED[0], man)))
+    finally:
+        C.MANIFEST = keep
+    ck("29e. append-only: the earlier bytes are untouched",
+       man.read_bytes() == before and len(before) > 0)
+
+# ------------------------------- 30. no executable price, P&L or trade claim
+ck("30a. no executable straddle cost is emitted",
+   "executable_straddle_cost" not in IR)
+ck("30b. the execution stage stays deferred",
+   IR["execution_economics_status"] == "OPRA_EXECUTION_DATA_UNAVAILABLE")
+ck("30c. an executable price on a manual record is refused",
+   refuses(lambda: C.assert_no_executable_claim(
+       dict(IR, executable_straddle_cost=0.05))))
+ck("30d. a simulated P&L field is refused",
+   refuses(lambda: C.assert_no_executable_claim(dict(IR, straddle_pnl=1.0))))
+ck("30e. a spread-adjusted return field is refused",
+   refuses(lambda: C.assert_no_executable_claim(dict(IR, spread_aware_net_return=1.0))))
+ck("30f. a trade instruction field is refused",
+   refuses(lambda: C.assert_no_prohibited_fields(dict(IR, order_side="BUY"))))
+ck("30g. the importer emits no trade instruction text",
+   not re.search(r"\b(buy|sell|entry|exit|position size)\b", out, re.I))
+
+# ------------------------------------- 31. earlier Alpaca evidence intact
+ALP = [r for r in LEDGER_RECS if r.get("provider") == "alpaca"]
+ck("31a. the Alpaca 401 connectivity evidence is still present",
+   any(r.get("response_status") == 401
+       and r.get("outcome") == "AUTH_OR_ENTITLEMENT_FAILED" for r in ALP))
+ck("31b. the Alpaca auth cross-check is still present",
+   any(r.get("record_type") == "auth_failure_cross_check"
+       and r.get("conclusion") == "CREDENTIALS_REJECTED_BY_PROVIDER"
+       for r in LEDGER_RECS))
+ck("31c. Amendment 1 is still byte-identical to its frozen hash",
+   hashlib.sha256(AMEND_PATH.read_bytes()).hexdigest()
+   == "0417380b3115255ed65956a54b2120f789334a8f5a9afcde61e8ae184547df0f")
+ck("31d. no fixture test left a real observation behind",
+   not C.MANIFEST.exists())
 
 print()
 print(f"{CHECKS - len(FAIL)} passed, {len(FAIL)} failed, {CHECKS} assertions total")

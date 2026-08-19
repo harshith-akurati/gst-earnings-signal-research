@@ -1,6 +1,48 @@
 # Changelog
 
 
+## 2026-08-18 — Attention–Options Dislocation: manual Cboe capture replaces the blocked Alpaca lane
+
+**No observation was collected. No outcome, trade or executable-alpha claim was created.**
+
+`PROVIDER_AMENDMENT_2026-08-18_CBOE_MANUAL.md` (sha256
+`b29bb559b87e26ee8de92359ba0cc43fd4b007849af53436b504989c47dedec0`) was committed at `8ca5bf6`
+**before any real Cboe file was ingested**. It is additive: `FROZEN_DESIGN_v1.0.md` (`dc270ef0…`) and
+Amendment 1 (`0417380b…`) are both byte-identical, and the Alpaca HTTP 401 evidence stays intact in
+`collection_provenance.jsonl`.
+
+Alpaca stays documented as unavailable and **provider-acquisition work stops**: no further account,
+identity, credential or API work will be attempted. The source becomes the **official Cboe Delayed
+Quotes dashboard**. Cboe permits manual ticker entry and CSV download but **explicitly prohibits
+automated extraction**, so **no code requests, scrapes, clicks, downloads or otherwise accesses
+Cboe** — there is no Cboe URL, HTTP client or browser driver in the repository. A human downloads the
+file; the tool is a **local-file importer** (`cboe-import`) with **zero network access**.
+
+Every accepted record carries **`CBOE_MANUAL_DELAYED_NON_EXECUTABLE`**. The **page-displayed
+market-data timestamp — not the download time — is the information cutoff**, and the two are recorded
+separately; a displayed timestamp equal to, later than, or too far behind its download is refused.
+The importer records filename, byte count and SHA-256, preserves the original repository-external,
+reuses the frozen expiration and nearest-strike rules and the unmodified implied-move arithmetic, and
+refuses wrong ticker, wrong event, missing calls/puts, duplicate contracts, crossed/negative quotes,
+missing timestamps, stale data, wrong expiration, ambiguous ATM, out-of-window retrieval and
+unconfirmed timing. It never emits executable straddle cost, simulated P&L or a trade instruction.
+The model, attention features, contract-selection rule and primary prediction metric are unchanged.
+
+**Defect fixed:** `append_record` and `existing_identities` bound the manifest path as a *default
+argument*, so a redirected panel was silently ignored and writes went to the real manifest. The path
+is now resolved at call time. Synthetic fixture rows this produced locally were deleted and were
+never committed.
+
+The offline suite grew to **211 assertions**, all passing with sockets blocked, covering amendment
+precedence, zero network access, the mandatory manual label, deterministic hashing and arithmetic,
+expiration and ATM selection, displayed-vs-retrieval timestamps, stale/missing/crossed/duplicate and
+wrong-ticker refusal, wrong-window and post-announcement refusal, append-only behaviour, the absence
+of any executable-price/P&L/trading claim, intact Alpaca 401 provenance, and that no observation
+exists after the fixtures run.
+
+**Next confirmed event:** Ross Stores (ROST), **2026-08-20, 4:15 p.m. ET → AMC**. Manual collection
+at **2026-08-20 15:45 ET**.
+
 ## 2026-08-17 — Attention–Options Dislocation: Alpaca provider amendment, and an honest stop
 
 **No observation was collected. No outcome, return, trade or order was created or retrieved.** The
