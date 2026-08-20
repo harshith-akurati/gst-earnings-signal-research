@@ -57,8 +57,10 @@ events with MSFT alone at 17.8%.
 
 **Unblocking requires.** Phase 2 panel observations accumulated after a forward pre-registration's own
 commit timestamp, with GST magnitude controlled, matched or stratified, plus firm-clustered inference
-and a per-ticker concentration cap. A draft pre-registration exists and is **held uncommitted**
-pending review.
+and a per-ticker concentration cap. **Pre-registration adopted 2026-08-20** —
+`External_Scrutiny_Audit_2026-08-20/AttentionDivergence_Forward_PreRegistration_v1.0_FROZEN_2026-08-20.md`.
+Status remains `queued-pending-forward-data`: the pre-registration is frozen, but **no eligible
+observation exists yet**, since only events after its commit timestamp qualify.
 
 ---
 
