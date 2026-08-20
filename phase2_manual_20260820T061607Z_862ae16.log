@@ -1,0 +1,1183 @@
+*** GST PHASE 2 -- DAILY INFORMATION ARRIVAL PANEL (MANUAL TEST RUN 3) ***
+Run timestamp (UTC): 2026-08-20T06:16:10.290579+00:00
+Universe: 24 tickers
+Budgets: GST=480s/ticker  wiki-chunk=35s (process-isolated, calendar-chunked, cached)  yfinance-call=45s  per-ticker=900s  total-run=2700s
+
+NOTE (scope disclosure): only the Wikipedia leg uses genuinely killable subprocess isolation this pass. GST/earnings/price_history/iv legs still use the daemon-thread run_bounded() wrapper -- a timeout there is logged and the run continues, but the underlying call is not guaranteed to actually stop. This is disclosed, not claimed otherwise.
+
+Wikipedia data watermark: 2026-08-19 (lag=1d, source=https://wikimedia.org/api/rest_v1/metrics/pageviews/aggregate/en.wikipedia.org/all-access/user/daily/2026081900/2026081900)
+
+STAGE 1 -- anchor-month availability retrieval for all 24 locked tickers: one request each, 2026-08-01..2026-08-19 (never past the aggregate watermark), globally paced at 3.5s minimum interval through one shared limiter.
+    [AAPL] anchor-month 2026-08-01..2026-08-19 status=ok http=200 retry_after=None attempts=1 n=19 latest=2026-08-19 
+    [ABBV] anchor-month 2026-08-01..2026-08-19 status=ok http=200 retry_after=None attempts=1 n=19 latest=2026-08-19 
+    [ADBE] anchor-month 2026-08-01..2026-08-19 status=ok http=200 retry_after=None attempts=1 n=19 latest=2026-08-19 
+    [AMZN] anchor-month 2026-08-01..2026-08-19 status=ok http=200 retry_after=None attempts=1 n=19 latest=2026-08-19 
+    [BKR] anchor-month 2026-08-01..2026-08-19 status=ok http=200 retry_after=None attempts=1 n=19 latest=2026-08-19 
+    [BRK-B] anchor-month 2026-08-01..2026-08-19 status=ok http=200 retry_after=None attempts=1 n=19 latest=2026-08-19 
+    [CTSH] anchor-month 2026-08-01..2026-08-19 status=ok http=200 retry_after=None attempts=1 n=19 latest=2026-08-19 
+    [DELL] anchor-month 2026-08-01..2026-08-19 status=ok http=200 retry_after=None attempts=1 n=19 latest=2026-08-19 
+    [DVN] anchor-month 2026-08-01..2026-08-19 status=ok http=200 retry_after=None attempts=1 n=19 latest=2026-08-19 
+    [GME] anchor-month 2026-08-01..2026-08-19 status=ok http=200 retry_after=None attempts=1 n=19 latest=2026-08-19 
+    [GOOGL] anchor-month 2026-08-01..2026-08-19 status=ok http=200 retry_after=None attempts=1 n=19 latest=2026-08-19 
+    [GPN] anchor-month 2026-08-01..2026-08-19 status=ok http=200 retry_after=None attempts=1 n=19 latest=2026-08-19 
+    [INTC] anchor-month 2026-08-01..2026-08-19 status=ok http=200 retry_after=None attempts=1 n=19 latest=2026-08-19 
+    [LDOS] anchor-month 2026-08-01..2026-08-19 status=ok http=200 retry_after=None attempts=2 n=19 latest=2026-08-19 
+    [MSFT] anchor-month 2026-08-01..2026-08-19 status=ok http=200 retry_after=None attempts=1 n=19 latest=2026-08-19 
+    [NCLH] anchor-month 2026-08-01..2026-08-19 status=ok http=200 retry_after=None attempts=1 n=19 latest=2026-08-19 
+    [NKE] anchor-month 2026-08-01..2026-08-19 status=ok http=200 retry_after=None attempts=1 n=19 latest=2026-08-19 
+    [QCOM] anchor-month 2026-08-01..2026-08-19 status=ok http=200 retry_after=None attempts=1 n=19 latest=2026-08-19 
+    [SBUX] anchor-month 2026-08-01..2026-08-19 status=ok http=200 retry_after=None attempts=1 n=19 latest=2026-08-19 
+    [STZ] anchor-month 2026-08-01..2026-08-19 status=ok http=200 retry_after=None attempts=1 n=19 latest=2026-08-19 
+    [SYK] anchor-month 2026-08-01..2026-08-19 status=ok http=200 retry_after=None attempts=1 n=19 latest=2026-08-19 
+    [TSLA] anchor-month 2026-08-01..2026-08-19 status=ok http=200 retry_after=None attempts=1 n=19 latest=2026-08-19 
+    [TTWO] anchor-month 2026-08-01..2026-08-19 status=ok http=200 retry_after=None attempts=1 n=19 latest=2026-08-19 
+    [UAL] anchor-month 2026-08-01..2026-08-19 status=ok http=200 retry_after=None attempts=1 n=19 latest=2026-08-19 
+  Stage 1 issued 25 request(s); total pacing wait 47.6s
+Effective panel watermark: 2026-08-19 (method=min_anchor_month_observed_latest_same_response, aggregate=2026-08-19, aggregate_vs_panel_lag_days=0, measured=24/24)
+  binding ticker(s) at the minimum: AAPL, ABBV, ADBE, AMZN, BKR, BRK-B, CTSH, DELL, DVN, GME, GOOGL, GPN, INTC, LDOS, MSFT, NCLH, NKE, QCOM, SBUX, STZ, SYK, TSLA, TTWO, UAL
+  STAGE 2 -- anchor-month responses reused in memory for 24 ticker(s); no second anchor-month request, nothing trailing-short cached.
+
+  [AAPL] START earnings
+  [AAPL] DONE  earnings  status=ok elapsed=1.13s value=70
+  [AAPL] START price_history
+  [AAPL] DONE  price_history  status=ok elapsed=0.42s rows=125
+  [AAPL] START realized_vol
+  [AAPL] DONE  realized_vol  status=ok elapsed=0.00s value=0.3255395300560266
+  [AAPL] START iv
+  [AAPL] DONE  iv  status=ok elapsed=0.44s iv=0.003916
+  [AAPL] START gst
+    [AAPL] attempt 1 failed: The request failed: Google returned a response with code 429 -- sleeping 21.1s (budget remaining after: 458s)
+C:\Users\hakur\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\pytrends\request.py:260: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+  df = df.fillna(False)
+  [AAPL] DONE  gst  status=ok elapsed=22.57s retries=2 rate_limit_events=1 z=-1.123
+  [AAPL] START wiki
+    [AAPL] wiki chunk 2025-10-23..2025-10-31 source=cache_union_reconstruction status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [AAPL] wiki chunk 2025-11-01..2025-11-30 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [AAPL] wiki chunk 2025-12-01..2025-12-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [AAPL] wiki chunk 2026-01-01..2026-01-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [AAPL] wiki chunk 2026-02-01..2026-02-28 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [AAPL] wiki chunk 2026-03-01..2026-03-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [AAPL] wiki chunk 2026-04-01..2026-04-30 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [AAPL] wiki chunk 2026-05-01..2026-05-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [AAPL] wiki chunk 2026-06-01..2026-06-30 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [AAPL] wiki chunk 2026-07-01..2026-07-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [AAPL] wiki chunk 2026-08-01..2026-08-19 source=anchor_month_stage1 status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+  [AAPL] DONE  wiki  status=ok elapsed=0.34s z=-8.7341
+[1/24] AAPL: 24.91s  CLEAN  gst_z=-1.123 wiki_z=-8.7341 iv=0.003916 rv=0.3255395300560266 price=316.8299865722656 vol=50428000 days_to_earnings=70
+  [ABBV] START earnings
+  [ABBV] DONE  earnings  status=ok elapsed=0.58s value=70
+  [ABBV] START price_history
+  [ABBV] DONE  price_history  status=ok elapsed=0.10s rows=125
+  [ABBV] START realized_vol
+  [ABBV] DONE  realized_vol  status=ok elapsed=0.00s value=0.2980462439396253
+  [ABBV] START iv
+  [ABBV] DONE  iv  status=ok elapsed=0.22s iv=0.007822
+  [ABBV] START gst
+C:\Users\hakur\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\pytrends\request.py:260: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+  df = df.fillna(False)
+  [ABBV] DONE  gst  status=ok elapsed=0.66s retries=1 rate_limit_events=0 z=-0.94
+  [ABBV] START wiki
+    [ABBV] wiki chunk 2025-10-23..2025-10-31 source=cache_union_reconstruction status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [ABBV] wiki chunk 2025-11-01..2025-11-30 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [ABBV] wiki chunk 2025-12-01..2025-12-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [ABBV] wiki chunk 2026-01-01..2026-01-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [ABBV] wiki chunk 2026-02-01..2026-02-28 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [ABBV] wiki chunk 2026-03-01..2026-03-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [ABBV] wiki chunk 2026-04-01..2026-04-30 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [ABBV] wiki chunk 2026-05-01..2026-05-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [ABBV] wiki chunk 2026-06-01..2026-06-30 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [ABBV] wiki chunk 2026-07-01..2026-07-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [ABBV] wiki chunk 2026-08-01..2026-08-19 source=anchor_month_stage1 status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+  [ABBV] DONE  wiki  status=ok elapsed=0.32s z=-5.7608
+[2/24] ABBV: 1.88s  CLEAN  gst_z=-0.94 wiki_z=-5.7608 iv=0.007822 rv=0.2980462439396253 price=265.9700012207031 vol=5533800 days_to_earnings=70
+  [ADBE] START earnings
+  [ADBE] DONE  earnings  status=ok elapsed=0.70s value=21
+  [ADBE] START price_history
+  [ADBE] DONE  price_history  status=ok elapsed=0.14s rows=125
+  [ADBE] START realized_vol
+  [ADBE] DONE  realized_vol  status=ok elapsed=0.00s value=0.5329717468501849
+  [ADBE] START iv
+  [ADBE] DONE  iv  status=ok elapsed=0.36s iv=0.000498
+  [ADBE] START gst
+C:\Users\hakur\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\pytrends\request.py:260: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+  df = df.fillna(False)
+  [ADBE] DONE  gst  status=ok elapsed=1.30s retries=1 rate_limit_events=0 z=-0.93
+  [ADBE] START wiki
+    [ADBE] wiki chunk 2025-10-23..2025-10-31 source=cache_union_reconstruction status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [ADBE] wiki chunk 2025-11-01..2025-11-30 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [ADBE] wiki chunk 2025-12-01..2025-12-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [ADBE] wiki chunk 2026-01-01..2026-01-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [ADBE] wiki chunk 2026-02-01..2026-02-28 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [ADBE] wiki chunk 2026-03-01..2026-03-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [ADBE] wiki chunk 2026-04-01..2026-04-30 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [ADBE] wiki chunk 2026-05-01..2026-05-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [ADBE] wiki chunk 2026-06-01..2026-06-30 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [ADBE] wiki chunk 2026-07-01..2026-07-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [ADBE] wiki chunk 2026-08-01..2026-08-19 source=anchor_month_stage1 status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+  [ADBE] DONE  wiki  status=ok elapsed=0.26s z=-4.8426
+[3/24] ADBE: 2.77s  CLEAN  gst_z=-0.93 wiki_z=-4.8426 iv=0.000498 rv=0.5329717468501849 price=272.4700012207031 vol=5538700 days_to_earnings=21
+  [AMZN] START earnings
+  [AMZN] DONE  earnings  status=ok elapsed=1.06s value=70
+  [AMZN] START price_history
+  [AMZN] DONE  price_history  status=ok elapsed=0.22s rows=125
+  [AMZN] START realized_vol
+  [AMZN] DONE  realized_vol  status=ok elapsed=0.00s value=0.4523370642200966
+  [AMZN] START iv
+  [AMZN] DONE  iv  status=ok elapsed=0.35s iv=0.007822
+  [AMZN] START gst
+C:\Users\hakur\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\pytrends\request.py:260: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+  df = df.fillna(False)
+  [AMZN] DONE  gst  status=ok elapsed=1.32s retries=1 rate_limit_events=0 z=-0.557
+  [AMZN] START wiki
+    [AMZN] wiki chunk 2025-10-23..2025-10-31 source=cache_union_reconstruction status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [AMZN] wiki chunk 2025-11-01..2025-11-30 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [AMZN] wiki chunk 2025-12-01..2025-12-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [AMZN] wiki chunk 2026-01-01..2026-01-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [AMZN] wiki chunk 2026-02-01..2026-02-28 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [AMZN] wiki chunk 2026-03-01..2026-03-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [AMZN] wiki chunk 2026-04-01..2026-04-30 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [AMZN] wiki chunk 2026-05-01..2026-05-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [AMZN] wiki chunk 2026-06-01..2026-06-30 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [AMZN] wiki chunk 2026-07-01..2026-07-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [AMZN] wiki chunk 2026-08-01..2026-08-19 source=anchor_month_stage1 status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+  [AMZN] DONE  wiki  status=ok elapsed=0.23s z=-2.2814
+[4/24] AMZN: 3.18s  CLEAN  gst_z=-0.557 wiki_z=-2.2814 iv=0.007822 rv=0.4523370642200966 price=265.8399963378906 vol=35613300 days_to_earnings=70
+  [BKR] START earnings
+  [BKR] DONE  earnings  status=ok elapsed=0.97s value=63
+  [BKR] START price_history
+  [BKR] DONE  price_history  status=ok elapsed=0.15s rows=125
+  [BKR] START realized_vol
+  [BKR] DONE  realized_vol  status=ok elapsed=0.00s value=0.3526629178789814
+  [BKR] START iv
+  [BKR] DONE  iv  status=ok elapsed=0.46s iv=0.015635
+  [BKR] START gst
+C:\Users\hakur\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\pytrends\request.py:260: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+  df = df.fillna(False)
+  [BKR] DONE  gst  status=ok elapsed=0.68s retries=1 rate_limit_events=0 z=-1.494
+  [BKR] START wiki
+    [BKR] wiki chunk 2025-10-23..2025-10-31 source=cache_union_reconstruction status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [BKR] wiki chunk 2025-11-01..2025-11-30 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [BKR] wiki chunk 2025-12-01..2025-12-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [BKR] wiki chunk 2026-01-01..2026-01-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [BKR] wiki chunk 2026-02-01..2026-02-28 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [BKR] wiki chunk 2026-03-01..2026-03-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [BKR] wiki chunk 2026-04-01..2026-04-30 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [BKR] wiki chunk 2026-05-01..2026-05-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [BKR] wiki chunk 2026-06-01..2026-06-30 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [BKR] wiki chunk 2026-07-01..2026-07-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [BKR] wiki chunk 2026-08-01..2026-08-19 source=anchor_month_stage1 status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+  [BKR] DONE  wiki  status=ok elapsed=0.28s z=-5.7759
+[5/24] BKR: 2.54s  CLEAN  gst_z=-1.494 wiki_z=-5.7759 iv=0.015635 rv=0.3526629178789814 price=64.4800033569336 vol=4812000 days_to_earnings=63
+  [BRK-B] START earnings
+  [BRK-B] DONE  earnings  status=ok elapsed=0.56s value=79
+  [BRK-B] START price_history
+  [BRK-B] DONE  price_history  status=ok elapsed=0.15s rows=125
+  [BRK-B] START realized_vol
+  [BRK-B] DONE  realized_vol  status=ok elapsed=0.00s value=0.1547862443037253
+  [BRK-B] START iv
+  [BRK-B] DONE  iv  status=ok elapsed=0.27s iv=0.001963
+  [BRK-B] START gst
+C:\Users\hakur\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\pytrends\request.py:260: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+  df = df.fillna(False)
+  [BRK-B] DONE  gst  status=ok elapsed=2.30s retries=1 rate_limit_events=0 z=-1.58
+  [BRK-B] START wiki
+    [BRK-B] wiki chunk 2025-10-23..2025-10-31 source=cache_union_reconstruction status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [BRK-B] wiki chunk 2025-11-01..2025-11-30 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [BRK-B] wiki chunk 2025-12-01..2025-12-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [BRK-B] wiki chunk 2026-01-01..2026-01-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [BRK-B] wiki chunk 2026-02-01..2026-02-28 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [BRK-B] wiki chunk 2026-03-01..2026-03-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [BRK-B] wiki chunk 2026-04-01..2026-04-30 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [BRK-B] wiki chunk 2026-05-01..2026-05-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [BRK-B] wiki chunk 2026-06-01..2026-06-30 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [BRK-B] wiki chunk 2026-07-01..2026-07-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [BRK-B] wiki chunk 2026-08-01..2026-08-19 source=anchor_month_stage1 status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+  [BRK-B] DONE  wiki  status=ok elapsed=0.28s z=-3.7731
+[6/24] BRK-B: 3.56s  CLEAN  gst_z=-1.58 wiki_z=-3.7731 iv=0.001963 rv=0.1547862443037253 price=499.6199951171875 vol=3555500 days_to_earnings=79
+— small batch pause (20s) —
+  [CTSH] START earnings
+  [CTSH] DONE  earnings  status=ok elapsed=0.59s value=69
+  [CTSH] START price_history
+  [CTSH] DONE  price_history  status=ok elapsed=0.09s rows=125
+  [CTSH] START realized_vol
+  [CTSH] DONE  realized_vol  status=ok elapsed=0.00s value=0.5502590664958096
+  [CTSH] START iv
+  [CTSH] DONE  iv  status=ok elapsed=0.26s iv=0.03126
+  [CTSH] START gst
+    [CTSH] attempt 1 failed: The request failed: Google returned a response with code 429 -- sleeping 26.2s (budget remaining after: 453s)
+    [CTSH] attempt 2 failed: The request failed: Google returned a response with code 429 -- sleeping 45.9s (budget remaining after: 407s)
+C:\Users\hakur\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\pytrends\request.py:260: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+  df = df.fillna(False)
+  [CTSH] DONE  gst  status=ok elapsed=74.12s retries=3 rate_limit_events=2 z=-0.992
+  [CTSH] START wiki
+    [CTSH] wiki chunk 2025-10-23..2025-10-31 source=cache_union_reconstruction status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [CTSH] wiki chunk 2025-11-01..2025-11-30 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [CTSH] wiki chunk 2025-12-01..2025-12-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [CTSH] wiki chunk 2026-01-01..2026-01-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [CTSH] wiki chunk 2026-02-01..2026-02-28 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [CTSH] wiki chunk 2026-03-01..2026-03-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [CTSH] wiki chunk 2026-04-01..2026-04-30 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [CTSH] wiki chunk 2026-05-01..2026-05-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [CTSH] wiki chunk 2026-06-01..2026-06-30 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [CTSH] wiki chunk 2026-07-01..2026-07-31 source=cache_union_reconstruction status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [CTSH] wiki chunk 2026-08-01..2026-08-19 source=anchor_month_stage1 status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+  [CTSH] DONE  wiki  status=ok elapsed=0.21s z=-1.6358
+[7/24] CTSH: 75.28s  CLEAN  gst_z=-0.992 wiki_z=-1.6358 iv=0.03126 rv=0.5502590664958096 price=60.93000030517578 vol=6867500 days_to_earnings=69
+  [DELL] START earnings
+  [DELL] DONE  earnings  status=ok elapsed=0.57s value=12
+  [DELL] START price_history
+  [DELL] DONE  price_history  status=ok elapsed=0.12s rows=125
+  [DELL] START realized_vol
+  [DELL] DONE  realized_vol  status=ok elapsed=0.00s value=1.0143351529572324
+  [DELL] START iv
+  [DELL] DONE  iv  status=ok elapsed=0.24s iv=0.000498
+  [DELL] START gst
+C:\Users\hakur\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\pytrends\request.py:260: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+  df = df.fillna(False)
+  [DELL] DONE  gst  status=ok elapsed=1.06s retries=1 rate_limit_events=0 z=-1.019
+  [DELL] START wiki
+    [DELL] wiki chunk 2025-10-23..2025-10-31 source=cache_union_reconstruction status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [DELL] wiki chunk 2025-11-01..2025-11-30 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [DELL] wiki chunk 2025-12-01..2025-12-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [DELL] wiki chunk 2026-01-01..2026-01-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [DELL] wiki chunk 2026-02-01..2026-02-28 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [DELL] wiki chunk 2026-03-01..2026-03-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [DELL] wiki chunk 2026-04-01..2026-04-30 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [DELL] wiki chunk 2026-05-01..2026-05-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [DELL] wiki chunk 2026-06-01..2026-06-30 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [DELL] wiki chunk 2026-07-01..2026-07-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [DELL] wiki chunk 2026-08-01..2026-08-19 source=anchor_month_stage1 status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+  [DELL] DONE  wiki  status=ok elapsed=0.35s z=-2.3223
+[8/24] DELL: 2.34s  CLEAN  gst_z=-1.019 wiki_z=-2.3223 iv=0.000498 rv=1.0143351529572324 price=437.54998779296875 vol=7062200 days_to_earnings=12
+  [DVN] START earnings
+  [DVN] DONE  earnings  status=ok elapsed=1.43s value=None
+  [DVN] START price_history
+  [DVN] DONE  price_history  status=ok elapsed=0.25s rows=125
+  [DVN] START realized_vol
+  [DVN] DONE  realized_vol  status=ok elapsed=0.00s value=0.381509876510673
+  [DVN] START iv
+  [DVN] DONE  iv  status=ok elapsed=0.43s iv=0.007822
+  [DVN] START gst
+C:\Users\hakur\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\pytrends\request.py:260: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+  df = df.fillna(False)
+  [DVN] DONE  gst  status=ok elapsed=1.46s retries=1 rate_limit_events=0 z=-0.741
+  [DVN] START wiki
+    [DVN] wiki chunk 2025-10-23..2025-10-31 source=cache_union_reconstruction status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [DVN] wiki chunk 2025-11-01..2025-11-30 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [DVN] wiki chunk 2025-12-01..2025-12-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [DVN] wiki chunk 2026-01-01..2026-01-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [DVN] wiki chunk 2026-02-01..2026-02-28 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [DVN] wiki chunk 2026-03-01..2026-03-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [DVN] wiki chunk 2026-04-01..2026-04-30 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [DVN] wiki chunk 2026-05-01..2026-05-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [DVN] wiki chunk 2026-06-01..2026-06-30 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [DVN] wiki chunk 2026-07-01..2026-07-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [DVN] wiki chunk 2026-08-01..2026-08-19 source=anchor_month_stage1 status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+  [DVN] DONE  wiki  status=ok elapsed=0.30s z=-2.9647
+[9/24] DVN: 3.88s  CLEAN  gst_z=-0.741 wiki_z=-2.9647 iv=0.007822 rv=0.381509876510673 price=48.189998626708984 vol=15094200 days_to_earnings=None
+  [GME] START earnings
+  [GME] DONE  earnings  status=ok elapsed=1.73s value=19
+  [GME] START price_history
+  [GME] DONE  price_history  status=ok elapsed=0.16s rows=125
+  [GME] START realized_vol
+  [GME] DONE  realized_vol  status=ok elapsed=0.00s value=0.356359639010532
+  [GME] START iv
+  [GME] DONE  iv  status=ok elapsed=0.26s iv=0.007822
+  [GME] START gst
+C:\Users\hakur\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\pytrends\request.py:260: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+  df = df.fillna(False)
+  [GME] DONE  gst  status=ok elapsed=0.71s retries=1 rate_limit_events=0 z=-1.041
+  [GME] START wiki
+    [GME] wiki chunk 2025-10-23..2025-10-31 source=cache_union_reconstruction status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [GME] wiki chunk 2025-11-01..2025-11-30 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [GME] wiki chunk 2025-12-01..2025-12-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [GME] wiki chunk 2026-01-01..2026-01-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [GME] wiki chunk 2026-02-01..2026-02-28 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [GME] wiki chunk 2026-03-01..2026-03-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [GME] wiki chunk 2026-04-01..2026-04-30 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [GME] wiki chunk 2026-05-01..2026-05-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [GME] wiki chunk 2026-06-01..2026-06-30 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [GME] wiki chunk 2026-07-01..2026-07-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [GME] wiki chunk 2026-08-01..2026-08-19 source=anchor_month_stage1 status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+  [GME] DONE  wiki  status=ok elapsed=0.21s z=-4.9858
+[10/24] GME: 3.08s  CLEAN  gst_z=-1.041 wiki_z=-4.9858 iv=0.007822 rv=0.356359639010532 price=18.030000686645508 vol=4870600 days_to_earnings=19
+  [GOOGL] START earnings
+  [GOOGL] DONE  earnings  status=ok elapsed=0.69s value=69
+  [GOOGL] START price_history
+  [GOOGL] DONE  price_history  status=ok elapsed=0.19s rows=125
+  [GOOGL] START realized_vol
+  [GOOGL] DONE  realized_vol  status=ok elapsed=0.00s value=0.3797264792221992
+  [GOOGL] START iv
+  [GOOGL] DONE  iv  status=ok elapsed=0.39s iv=0.001963
+  [GOOGL] START gst
+C:\Users\hakur\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\pytrends\request.py:260: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+  df = df.fillna(False)
+  [GOOGL] DONE  gst  status=ok elapsed=0.95s retries=1 rate_limit_events=0 z=-0.419
+  [GOOGL] START wiki
+    [GOOGL] wiki chunk 2025-10-23..2025-10-31 source=cache_union_reconstruction status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [GOOGL] wiki chunk 2025-11-01..2025-11-30 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [GOOGL] wiki chunk 2025-12-01..2025-12-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [GOOGL] wiki chunk 2026-01-01..2026-01-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [GOOGL] wiki chunk 2026-02-01..2026-02-28 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [GOOGL] wiki chunk 2026-03-01..2026-03-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [GOOGL] wiki chunk 2026-04-01..2026-04-30 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [GOOGL] wiki chunk 2026-05-01..2026-05-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [GOOGL] wiki chunk 2026-06-01..2026-06-30 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [GOOGL] wiki chunk 2026-07-01..2026-07-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [GOOGL] wiki chunk 2026-08-01..2026-08-19 source=anchor_month_stage1 status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+  [GOOGL] DONE  wiki  status=ok elapsed=0.35s z=-3.4244
+[11/24] GOOGL: 2.58s  CLEAN  gst_z=-0.419 wiki_z=-3.4244 iv=0.001963 rv=0.3797264792221992 price=344.7200012207031 vol=19665100 days_to_earnings=69
+  [GPN] START earnings
+  [GPN] DONE  earnings  status=ok elapsed=0.64s value=75
+  [GPN] START price_history
+  [GPN] DONE  price_history  status=ok elapsed=0.42s rows=125
+  [GPN] START realized_vol
+  [GPN] DONE  realized_vol  status=ok elapsed=0.00s value=0.4565649611843915
+  [GPN] START iv
+  [GPN] DONE  iv  status=ok elapsed=0.22s iv=0.03126
+  [GPN] START gst
+C:\Users\hakur\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\pytrends\request.py:260: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+  df = df.fillna(False)
+  [GPN] DONE  gst  status=ok elapsed=0.74s retries=1 rate_limit_events=0 z=-1.127
+  [GPN] START wiki
+    [GPN] wiki chunk 2025-10-23..2025-10-31 source=cache_union_reconstruction status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [GPN] wiki chunk 2025-11-01..2025-11-30 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [GPN] wiki chunk 2025-12-01..2025-12-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [GPN] wiki chunk 2026-01-01..2026-01-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [GPN] wiki chunk 2026-02-01..2026-02-28 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [GPN] wiki chunk 2026-03-01..2026-03-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [GPN] wiki chunk 2026-04-01..2026-04-30 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [GPN] wiki chunk 2026-05-01..2026-05-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [GPN] wiki chunk 2026-06-01..2026-06-30 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [GPN] wiki chunk 2026-07-01..2026-07-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [GPN] wiki chunk 2026-08-01..2026-08-19 source=anchor_month_stage1 status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+  [GPN] DONE  wiki  status=ok elapsed=0.25s z=-4.0538
+[12/24] GPN: 2.27s  CLEAN  gst_z=-1.127 wiki_z=-4.0538 iv=0.03126 rv=0.4565649611843915 price=91.73999786376953 vol=2460000 days_to_earnings=75
+— small batch pause (20s) —
+  [INTC] START earnings
+  [INTC] DONE  earnings  status=ok elapsed=0.70s value=63
+  [INTC] START price_history
+  [INTC] DONE  price_history  status=ok elapsed=0.17s rows=125
+  [INTC] START realized_vol
+  [INTC] DONE  realized_vol  status=ok elapsed=0.00s value=0.8494230542403325
+  [INTC] START iv
+  [INTC] DONE  iv  status=ok elapsed=0.49s iv=0.003916
+  [INTC] START gst
+C:\Users\hakur\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\pytrends\request.py:260: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+  df = df.fillna(False)
+  [INTC] DONE  gst  status=ok elapsed=0.77s retries=1 rate_limit_events=0 z=-0.988
+  [INTC] START wiki
+    [INTC] wiki chunk 2025-10-23..2025-10-31 source=cache_union_reconstruction status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [INTC] wiki chunk 2025-11-01..2025-11-30 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [INTC] wiki chunk 2025-12-01..2025-12-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [INTC] wiki chunk 2026-01-01..2026-01-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [INTC] wiki chunk 2026-02-01..2026-02-28 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [INTC] wiki chunk 2026-03-01..2026-03-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [INTC] wiki chunk 2026-04-01..2026-04-30 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [INTC] wiki chunk 2026-05-01..2026-05-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [INTC] wiki chunk 2026-06-01..2026-06-30 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [INTC] wiki chunk 2026-07-01..2026-07-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [INTC] wiki chunk 2026-08-01..2026-08-19 source=anchor_month_stage1 status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+  [INTC] DONE  wiki  status=ok elapsed=0.25s z=-6.8127
+[13/24] INTC: 2.39s  CLEAN  gst_z=-0.988 wiki_z=-6.8127 iv=0.003916 rv=0.8494230542403325 price=92.80000305175781 vol=109605300 days_to_earnings=63
+  [LDOS] START earnings
+  [LDOS] DONE  earnings  status=ok elapsed=0.93s value=75
+  [LDOS] START price_history
+  [LDOS] DONE  price_history  status=ok elapsed=0.23s rows=123
+  [LDOS] START realized_vol
+  [LDOS] DONE  realized_vol  status=ok elapsed=0.00s value=0.40383080960988676
+  [LDOS] START iv
+  [LDOS] DONE  iv  status=ok elapsed=0.28s iv=0.015635
+  [LDOS] START gst
+C:\Users\hakur\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\pytrends\request.py:260: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+  df = df.fillna(False)
+  [LDOS] DONE  gst  status=ok elapsed=1.26s retries=1 rate_limit_events=0 z=-0.847
+  [LDOS] START wiki
+    [LDOS] wiki chunk 2025-10-23..2025-10-31 source=cache_union_reconstruction status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [LDOS] wiki chunk 2025-11-01..2025-11-30 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [LDOS] wiki chunk 2025-12-01..2025-12-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [LDOS] wiki chunk 2026-01-01..2026-01-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [LDOS] wiki chunk 2026-02-01..2026-02-28 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [LDOS] wiki chunk 2026-03-01..2026-03-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [LDOS] wiki chunk 2026-04-01..2026-04-30 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [LDOS] wiki chunk 2026-05-01..2026-05-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [LDOS] wiki chunk 2026-06-01..2026-06-30 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [LDOS] wiki chunk 2026-07-01..2026-07-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [LDOS] wiki chunk 2026-08-01..2026-08-19 source=anchor_month_stage1 status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+  [LDOS] DONE  wiki  status=ok elapsed=0.30s z=-5.7928
+[14/24] LDOS: 2.99s  CLEAN  gst_z=-0.847 wiki_z=-5.7928 iv=0.015635 rv=0.40383080960988676 price=146.30999755859375 vol=1171300 days_to_earnings=75
+  [MSFT] START earnings
+  [MSFT] DONE  earnings  status=ok elapsed=1.02s value=69
+  [MSFT] START price_history
+  [MSFT] DONE  price_history  status=ok elapsed=0.24s rows=126
+  [MSFT] START realized_vol
+  [MSFT] DONE  realized_vol  status=ok elapsed=0.00s value=0.47522141337783874
+  [MSFT] START iv
+  [MSFT] DONE  iv  status=ok elapsed=0.31s iv=0.003916
+  [MSFT] START gst
+C:\Users\hakur\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\pytrends\request.py:260: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+  df = df.fillna(False)
+  [MSFT] DONE  gst  status=ok elapsed=1.29s retries=1 rate_limit_events=0 z=-1.255
+  [MSFT] START wiki
+    [MSFT] wiki chunk 2025-10-23..2025-10-31 source=cache_union_reconstruction status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [MSFT] wiki chunk 2025-11-01..2025-11-30 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [MSFT] wiki chunk 2025-12-01..2025-12-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [MSFT] wiki chunk 2026-01-01..2026-01-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [MSFT] wiki chunk 2026-02-01..2026-02-28 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [MSFT] wiki chunk 2026-03-01..2026-03-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [MSFT] wiki chunk 2026-04-01..2026-04-30 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [MSFT] wiki chunk 2026-05-01..2026-05-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [MSFT] wiki chunk 2026-06-01..2026-06-30 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [MSFT] wiki chunk 2026-07-01..2026-07-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [MSFT] wiki chunk 2026-08-01..2026-08-19 source=anchor_month_stage1 status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+  [MSFT] DONE  wiki  status=ok elapsed=0.21s z=-2.7589
+[15/24] MSFT: 3.07s  CLEAN  gst_z=-1.255 wiki_z=-2.7589 iv=0.003916 rv=0.47522141337783874 price=484.30999755859375 vol=19885600 days_to_earnings=69
+  [NCLH] START earnings
+  [NCLH] DONE  earnings  status=ok elapsed=0.73s value=76
+  [NCLH] START price_history
+  [NCLH] DONE  price_history  status=ok elapsed=0.11s rows=125
+  [NCLH] START realized_vol
+  [NCLH] DONE  realized_vol  status=ok elapsed=0.00s value=0.5275292852999376
+  [NCLH] START iv
+  [NCLH] DONE  iv  status=ok elapsed=0.33s iv=0.03126
+  [NCLH] START gst
+C:\Users\hakur\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\pytrends\request.py:260: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+  df = df.fillna(False)
+  [NCLH] DONE  gst  status=ok elapsed=1.37s retries=1 rate_limit_events=0 z=-1.166
+  [NCLH] START wiki
+    [NCLH] wiki chunk 2025-10-23..2025-10-31 source=cache_union_reconstruction status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [NCLH] wiki chunk 2025-11-01..2025-11-30 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [NCLH] wiki chunk 2025-12-01..2025-12-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [NCLH] wiki chunk 2026-01-01..2026-01-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [NCLH] wiki chunk 2026-02-01..2026-02-28 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [NCLH] wiki chunk 2026-03-01..2026-03-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [NCLH] wiki chunk 2026-04-01..2026-04-30 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [NCLH] wiki chunk 2026-05-01..2026-05-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [NCLH] wiki chunk 2026-06-01..2026-06-30 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [NCLH] wiki chunk 2026-07-01..2026-07-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [NCLH] wiki chunk 2026-08-01..2026-08-19 source=anchor_month_stage1 status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+  [NCLH] DONE  wiki  status=ok elapsed=0.93s z=-4.6703
+[16/24] NCLH: 3.48s  CLEAN  gst_z=-1.166 wiki_z=-4.6703 iv=0.03126 rv=0.5275292852999376 price=17.34000015258789 vol=11245500 days_to_earnings=76
+  [NKE] START earnings
+  [NKE] DONE  earnings  status=ok elapsed=0.86s value=40
+  [NKE] START price_history
+  [NKE] DONE  price_history  status=ok elapsed=0.59s rows=125
+  [NKE] START realized_vol
+  [NKE] DONE  realized_vol  status=ok elapsed=0.00s value=0.3524805976215396
+  [NKE] START iv
+  [NKE] DONE  iv  status=ok elapsed=0.41s iv=0.003916
+  [NKE] START gst
+C:\Users\hakur\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\pytrends\request.py:260: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+  df = df.fillna(False)
+  [NKE] DONE  gst  status=ok elapsed=1.01s retries=1 rate_limit_events=0 z=3.467
+  [NKE] START wiki
+    [NKE] wiki chunk 2025-10-23..2025-10-31 source=cache_union_reconstruction status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [NKE] wiki chunk 2025-11-01..2025-11-30 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [NKE] wiki chunk 2025-12-01..2025-12-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [NKE] wiki chunk 2026-01-01..2026-01-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [NKE] wiki chunk 2026-02-01..2026-02-28 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [NKE] wiki chunk 2026-03-01..2026-03-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [NKE] wiki chunk 2026-04-01..2026-04-30 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [NKE] wiki chunk 2026-05-01..2026-05-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [NKE] wiki chunk 2026-06-01..2026-06-30 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [NKE] wiki chunk 2026-07-01..2026-07-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [NKE] wiki chunk 2026-08-01..2026-08-19 source=anchor_month_stage1 status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+  [NKE] DONE  wiki  status=ok elapsed=0.28s z=-3.5153
+[17/24] NKE: 3.16s  CLEAN  gst_z=3.467 wiki_z=-3.5153 iv=0.003916 rv=0.3524805976215396 price=41.04999923706055 vol=22026500 days_to_earnings=40
+  [QCOM] START earnings
+  [QCOM] DONE  earnings  status=ok elapsed=0.69s value=70
+  [QCOM] START price_history
+  [QCOM] DONE  price_history  status=ok elapsed=0.22s rows=125
+  [QCOM] START realized_vol
+  [QCOM] DONE  realized_vol  status=ok elapsed=0.00s value=0.6390571756224342
+  [QCOM] START iv
+  [QCOM] DONE  iv  status=ok elapsed=0.21s iv=0.007822
+  [QCOM] START gst
+C:\Users\hakur\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\pytrends\request.py:260: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+  df = df.fillna(False)
+  [QCOM] DONE  gst  status=ok elapsed=0.76s retries=1 rate_limit_events=0 z=-1.414
+  [QCOM] START wiki
+    [QCOM] wiki chunk 2025-10-23..2025-10-31 source=cache_union_reconstruction status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [QCOM] wiki chunk 2025-11-01..2025-11-30 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [QCOM] wiki chunk 2025-12-01..2025-12-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [QCOM] wiki chunk 2026-01-01..2026-01-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [QCOM] wiki chunk 2026-02-01..2026-02-28 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [QCOM] wiki chunk 2026-03-01..2026-03-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [QCOM] wiki chunk 2026-04-01..2026-04-30 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [QCOM] wiki chunk 2026-05-01..2026-05-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [QCOM] wiki chunk 2026-06-01..2026-06-30 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [QCOM] wiki chunk 2026-07-01..2026-07-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [QCOM] wiki chunk 2026-08-01..2026-08-19 source=anchor_month_stage1 status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+  [QCOM] DONE  wiki  status=ok elapsed=0.39s z=-3.1544
+[18/24] QCOM: 2.27s  CLEAN  gst_z=-1.414 wiki_z=-3.1544 iv=0.007822 rv=0.6390571756224342 price=161.91000366210938 vol=8080900 days_to_earnings=70
+— small batch pause (20s) —
+  [SBUX] START earnings
+  [SBUX] DONE  earnings  status=ok elapsed=0.81s value=69
+  [SBUX] START price_history
+  [SBUX] DONE  price_history  status=ok elapsed=0.21s rows=125
+  [SBUX] START realized_vol
+  [SBUX] DONE  realized_vol  status=ok elapsed=0.00s value=0.2281136320497197
+  [SBUX] START iv
+  [SBUX] DONE  iv  status=ok elapsed=0.44s iv=0.000987
+  [SBUX] START gst
+C:\Users\hakur\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\pytrends\request.py:260: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+  df = df.fillna(False)
+  [SBUX] DONE  gst  status=ok elapsed=1.04s retries=1 rate_limit_events=0 z=-0.362
+  [SBUX] START wiki
+    [SBUX] wiki chunk 2025-10-23..2025-10-31 source=cache_union_reconstruction status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [SBUX] wiki chunk 2025-11-01..2025-11-30 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [SBUX] wiki chunk 2025-12-01..2025-12-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [SBUX] wiki chunk 2026-01-01..2026-01-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [SBUX] wiki chunk 2026-02-01..2026-02-28 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [SBUX] wiki chunk 2026-03-01..2026-03-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [SBUX] wiki chunk 2026-04-01..2026-04-30 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [SBUX] wiki chunk 2026-05-01..2026-05-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [SBUX] wiki chunk 2026-06-01..2026-06-30 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [SBUX] wiki chunk 2026-07-01..2026-07-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [SBUX] wiki chunk 2026-08-01..2026-08-19 source=anchor_month_stage1 status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+  [SBUX] DONE  wiki  status=ok elapsed=0.30s z=-3.5687
+[19/24] SBUX: 2.79s  CLEAN  gst_z=-0.362 wiki_z=-3.5687 iv=0.000987 rv=0.2281136320497197 price=104.9800033569336 vol=6813900 days_to_earnings=69
+  [STZ] START earnings
+  [STZ] DONE  earnings  status=ok elapsed=0.67s value=46
+  [STZ] START price_history
+  [STZ] DONE  price_history  status=ok elapsed=0.23s rows=125
+  [STZ] START realized_vol
+  [STZ] DONE  realized_vol  status=ok elapsed=0.00s value=0.31010117927777847
+  [STZ] START iv
+  [STZ] DONE  iv  status=ok elapsed=0.29s iv=0.007822
+  [STZ] START gst
+C:\Users\hakur\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\pytrends\request.py:260: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+  df = df.fillna(False)
+  [STZ] DONE  gst  status=ok elapsed=0.64s retries=1 rate_limit_events=0 z=-0.653
+  [STZ] START wiki
+    [STZ] wiki chunk 2025-10-23..2025-10-31 source=cache_union_reconstruction status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [STZ] wiki chunk 2025-11-01..2025-11-30 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [STZ] wiki chunk 2025-12-01..2025-12-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [STZ] wiki chunk 2026-01-01..2026-01-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [STZ] wiki chunk 2026-02-01..2026-02-28 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [STZ] wiki chunk 2026-03-01..2026-03-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [STZ] wiki chunk 2026-04-01..2026-04-30 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [STZ] wiki chunk 2026-05-01..2026-05-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [STZ] wiki chunk 2026-06-01..2026-06-30 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [STZ] wiki chunk 2026-07-01..2026-07-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [STZ] wiki chunk 2026-08-01..2026-08-19 source=anchor_month_stage1 status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+  [STZ] DONE  wiki  status=ok elapsed=0.28s z=-1.6641
+[20/24] STZ: 2.12s  CLEAN  gst_z=-0.653 wiki_z=-1.6641 iv=0.007822 rv=0.31010117927777847 price=133.52000427246094 vol=1497200 days_to_earnings=46
+  [SYK] START earnings
+  [SYK] DONE  earnings  status=ok elapsed=0.93s value=70
+  [SYK] START price_history
+  [SYK] DONE  price_history  status=ok elapsed=0.13s rows=123
+  [SYK] START realized_vol
+  [SYK] DONE  realized_vol  status=ok elapsed=0.00s value=0.37996411454658624
+  [SYK] START iv
+  [SYK] DONE  iv  status=ok elapsed=0.25s iv=0.000254
+  [SYK] START gst
+C:\Users\hakur\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\pytrends\request.py:260: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+  df = df.fillna(False)
+  [SYK] DONE  gst  status=ok elapsed=0.67s retries=1 rate_limit_events=0 z=-2.233
+  [SYK] START wiki
+    [SYK] wiki chunk 2025-10-23..2025-10-31 source=cache_union_reconstruction status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [SYK] wiki chunk 2025-11-01..2025-11-30 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [SYK] wiki chunk 2025-12-01..2025-12-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [SYK] wiki chunk 2026-01-01..2026-01-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [SYK] wiki chunk 2026-02-01..2026-02-28 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [SYK] wiki chunk 2026-03-01..2026-03-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [SYK] wiki chunk 2026-04-01..2026-04-30 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [SYK] wiki chunk 2026-05-01..2026-05-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [SYK] wiki chunk 2026-06-01..2026-06-30 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [SYK] wiki chunk 2026-07-01..2026-07-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [SYK] wiki chunk 2026-08-01..2026-08-19 source=anchor_month_stage1 status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+  [SYK] DONE  wiki  status=ok elapsed=0.30s z=-4.9882
+[21/24] SYK: 2.27s  CLEAN  gst_z=-2.233 wiki_z=-4.9882 iv=0.000254 rv=0.37996411454658624 price=339.9800109863281 vol=2188000 days_to_earnings=70
+  [TSLA] START earnings
+  [TSLA] DONE  earnings  status=ok elapsed=0.58s value=62
+  [TSLA] START price_history
+  [TSLA] DONE  price_history  status=ok elapsed=0.13s rows=125
+  [TSLA] START realized_vol
+  [TSLA] DONE  realized_vol  status=ok elapsed=0.00s value=0.5609850620378369
+  [TSLA] START iv
+  [TSLA] DONE  iv  status=ok elapsed=0.31s iv=0.007822
+  [TSLA] START gst
+C:\Users\hakur\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\pytrends\request.py:260: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+  df = df.fillna(False)
+  [TSLA] DONE  gst  status=ok elapsed=0.62s retries=1 rate_limit_events=0 z=-1.112
+  [TSLA] START wiki
+    [TSLA] wiki chunk 2025-10-23..2025-10-31 source=cache_union_reconstruction status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [TSLA] wiki chunk 2025-11-01..2025-11-30 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [TSLA] wiki chunk 2025-12-01..2025-12-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [TSLA] wiki chunk 2026-01-01..2026-01-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [TSLA] wiki chunk 2026-02-01..2026-02-28 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [TSLA] wiki chunk 2026-03-01..2026-03-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [TSLA] wiki chunk 2026-04-01..2026-04-30 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [TSLA] wiki chunk 2026-05-01..2026-05-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [TSLA] wiki chunk 2026-06-01..2026-06-30 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [TSLA] wiki chunk 2026-07-01..2026-07-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [TSLA] wiki chunk 2026-08-01..2026-08-19 source=anchor_month_stage1 status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+  [TSLA] DONE  wiki  status=ok elapsed=0.33s z=-2.0485
+[22/24] TSLA: 1.98s  CLEAN  gst_z=-1.112 wiki_z=-2.0485 iv=0.007822 rv=0.5609850620378369 price=351.1199951171875 vol=36613200 days_to_earnings=62
+  [TTWO] START earnings
+  [TTWO] DONE  earnings  status=ok elapsed=0.83s value=81
+  [TTWO] START price_history
+  [TTWO] DONE  price_history  status=ok elapsed=0.18s rows=124
+  [TTWO] START realized_vol
+  [TTWO] DONE  realized_vol  status=ok elapsed=0.00s value=0.36550133920816147
+  [TTWO] START iv
+  [TTWO] DONE  iv  status=ok elapsed=0.22s iv=0.003916
+  [TTWO] START gst
+C:\Users\hakur\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\pytrends\request.py:260: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+  df = df.fillna(False)
+  [TTWO] DONE  gst  status=ok elapsed=0.73s retries=1 rate_limit_events=0 z=-0.66
+  [TTWO] START wiki
+    [TTWO] wiki chunk 2025-10-23..2025-10-31 source=cache_union_reconstruction status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [TTWO] wiki chunk 2025-11-01..2025-11-30 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [TTWO] wiki chunk 2025-12-01..2025-12-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [TTWO] wiki chunk 2026-01-01..2026-01-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [TTWO] wiki chunk 2026-02-01..2026-02-28 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [TTWO] wiki chunk 2026-03-01..2026-03-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [TTWO] wiki chunk 2026-04-01..2026-04-30 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [TTWO] wiki chunk 2026-05-01..2026-05-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [TTWO] wiki chunk 2026-06-01..2026-06-30 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [TTWO] wiki chunk 2026-07-01..2026-07-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [TTWO] wiki chunk 2026-08-01..2026-08-19 source=anchor_month_stage1 status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+  [TTWO] DONE  wiki  status=ok elapsed=0.27s z=-1.3119
+[23/24] TTWO: 2.23s  CLEAN  gst_z=-0.66 wiki_z=-1.3119 iv=0.003916 rv=0.36550133920816147 price=237.0399932861328 vol=2665600 days_to_earnings=81
+  [UAL] START earnings
+  [UAL] DONE  earnings  status=ok elapsed=0.57s value=62
+  [UAL] START price_history
+  [UAL] DONE  price_history  status=ok elapsed=0.11s rows=125
+  [UAL] START realized_vol
+  [UAL] DONE  realized_vol  status=ok elapsed=0.00s value=0.4878229158988219
+  [UAL] START iv
+  [UAL] DONE  iv  status=ok elapsed=0.22s iv=0.003916
+  [UAL] START gst
+C:\Users\hakur\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\pytrends\request.py:260: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+  df = df.fillna(False)
+  [UAL] DONE  gst  status=ok elapsed=0.73s retries=1 rate_limit_events=0 z=-2.406
+  [UAL] START wiki
+    [UAL] wiki chunk 2025-10-23..2025-10-31 source=cache_union_reconstruction status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [UAL] wiki chunk 2025-11-01..2025-11-30 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [UAL] wiki chunk 2025-12-01..2025-12-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [UAL] wiki chunk 2026-01-01..2026-01-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [UAL] wiki chunk 2026-02-01..2026-02-28 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [UAL] wiki chunk 2026-03-01..2026-03-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [UAL] wiki chunk 2026-04-01..2026-04-30 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [UAL] wiki chunk 2026-05-01..2026-05-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [UAL] wiki chunk 2026-06-01..2026-06-30 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [UAL] wiki chunk 2026-07-01..2026-07-31 source=cache status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+    [UAL] wiki chunk 2026-08-01..2026-08-19 source=anchor_month_stage1 status=ok http_status=None retry_after=None network=0.00s sleep=0.00s
+  [UAL] DONE  wiki  status=ok elapsed=0.32s z=-4.7512
+[24/24] UAL: 1.95s  CLEAN  gst_z=-2.406 wiki_z=-4.7512 iv=0.003916 rv=0.4878229158988219 price=115.77999877929688 vol=2939200 days_to_earnings=62
+
+Wrote final (COMPLETE) output: Live Signal Engine\GST_Phase2_DailyPanel_TestRun_2026-08-20_run3.csv
+
+=== RUN SUMMARY ===
+Status: COMPLETE
+Tickers: 24/24  Clean (six locked research fields only): 24  Incomplete: 0  Earnings lookup ok (date may still be null): 24
+Total wall time: 272.1s (4.54 min)
+
+Completion marker written: Live Signal Engine\GST_Phase2_DailyPanel_TestRun_2026-08-20_run3_COMPLETION_MARKER.json
+{
+  "status": "COMPLETE",
+  "row_count": 24,
+  "unique_ticker_count": 24,
+  "expected_ticker_count": 24,
+  "all_six_fields_clean_count": 24,
+  "earnings_lookup_ok_count": 24,
+  "days_to_nearest_earnings_nonnull_count": 23,
+  "field_completeness_pct": {
+    "gst_zscore": 100.0,
+    "wiki_zscore": 100.0,
+    "implied_volatility": 100.0,
+    "realized_vol": 100.0,
+    "price": 100.0,
+    "volume": 100.0
+  },
+  "failed_source_counts": {
+    "earnings": 0,
+    "price_history": 0,
+    "realized_vol": 0,
+    "iv": 0,
+    "gst": 0,
+    "wiki": 0
+  },
+  "elapsed_s": 272.1,
+  "elapsed_min": 4.54,
+  "active_ticker_when_stopped": null,
+  "active_leg_when_stopped": null,
+  "checkpoint_path": null,
+  "final_path": "Live Signal Engine\\GST_Phase2_DailyPanel_TestRun_2026-08-20_run3.csv",
+  "generated_at_utc": "2026-08-20T06:22:09.349489+00:00",
+  "wiki_data_watermark": {
+    "status": "ok",
+    "watermark_date": "2026-08-19",
+    "lag_days": 1,
+    "retrieved_at_utc": "2026-08-20T06:16:10.756983+00:00",
+    "source_url": "https://wikimedia.org/api/rest_v1/metrics/pageviews/aggregate/en.wikipedia.org/all-access/user/daily/2026081900/2026081900",
+    "http_status": 200
+  },
+  "wiki_effective_panel_watermark": {
+    "status": "ok",
+    "effective_panel_watermark_date": "2026-08-19",
+    "method": "min_anchor_month_observed_latest_same_response",
+    "aggregate_vs_panel_lag_days": 0,
+    "measured_count": 24,
+    "expected_count": 24,
+    "binding_tickers": [
+      "AAPL",
+      "ABBV",
+      "ADBE",
+      "AMZN",
+      "BKR",
+      "BRK-B",
+      "CTSH",
+      "DELL",
+      "DVN",
+      "GME",
+      "GOOGL",
+      "GPN",
+      "INTC",
+      "LDOS",
+      "MSFT",
+      "NCLH",
+      "NKE",
+      "QCOM",
+      "SBUX",
+      "STZ",
+      "SYK",
+      "TSLA",
+      "TTWO",
+      "UAL"
+    ],
+    "unmeasured": [],
+    "resolved_at_utc": "2026-08-20T06:16:11.089874+00:00",
+    "per_ticker_latest_available_date": {
+      "AAPL": "2026-08-19",
+      "ABBV": "2026-08-19",
+      "ADBE": "2026-08-19",
+      "AMZN": "2026-08-19",
+      "BKR": "2026-08-19",
+      "BRK-B": "2026-08-19",
+      "CTSH": "2026-08-19",
+      "DELL": "2026-08-19",
+      "DVN": "2026-08-19",
+      "GME": "2026-08-19",
+      "GOOGL": "2026-08-19",
+      "GPN": "2026-08-19",
+      "INTC": "2026-08-19",
+      "LDOS": "2026-08-19",
+      "MSFT": "2026-08-19",
+      "NCLH": "2026-08-19",
+      "NKE": "2026-08-19",
+      "QCOM": "2026-08-19",
+      "SBUX": "2026-08-19",
+      "STZ": "2026-08-19",
+      "SYK": "2026-08-19",
+      "TSLA": "2026-08-19",
+      "TTWO": "2026-08-19",
+      "UAL": "2026-08-19"
+    },
+    "anchor_month_request": {
+      "requested_start": "2026-08-01",
+      "requested_end": "2026-08-19",
+      "request_count": 25,
+      "total_pacing_wait_s": 47.556,
+      "min_request_interval_s": 3.5
+    },
+    "anchor_month_observed": {
+      "AAPL": {
+        "status": "ok",
+        "observed_count": 19,
+        "latest_available_date": "2026-08-19",
+        "http_status": 200,
+        "attempts": 1,
+        "reason": "",
+        "anchor_month_attempt_count": 1,
+        "anchor_month_attempt_statuses": [
+          "200_ok"
+        ],
+        "anchor_month_retry_wait_seconds": [],
+        "anchor_month_recovered_after_transient_404": false,
+        "anchor_month_final_http_status": 200
+      },
+      "ABBV": {
+        "status": "ok",
+        "observed_count": 19,
+        "latest_available_date": "2026-08-19",
+        "http_status": 200,
+        "attempts": 1,
+        "reason": "",
+        "anchor_month_attempt_count": 1,
+        "anchor_month_attempt_statuses": [
+          "200_ok"
+        ],
+        "anchor_month_retry_wait_seconds": [],
+        "anchor_month_recovered_after_transient_404": false,
+        "anchor_month_final_http_status": 200
+      },
+      "ADBE": {
+        "status": "ok",
+        "observed_count": 19,
+        "latest_available_date": "2026-08-19",
+        "http_status": 200,
+        "attempts": 1,
+        "reason": "",
+        "anchor_month_attempt_count": 1,
+        "anchor_month_attempt_statuses": [
+          "200_ok"
+        ],
+        "anchor_month_retry_wait_seconds": [],
+        "anchor_month_recovered_after_transient_404": false,
+        "anchor_month_final_http_status": 200
+      },
+      "AMZN": {
+        "status": "ok",
+        "observed_count": 19,
+        "latest_available_date": "2026-08-19",
+        "http_status": 200,
+        "attempts": 1,
+        "reason": "",
+        "anchor_month_attempt_count": 1,
+        "anchor_month_attempt_statuses": [
+          "200_ok"
+        ],
+        "anchor_month_retry_wait_seconds": [],
+        "anchor_month_recovered_after_transient_404": false,
+        "anchor_month_final_http_status": 200
+      },
+      "BKR": {
+        "status": "ok",
+        "observed_count": 19,
+        "latest_available_date": "2026-08-19",
+        "http_status": 200,
+        "attempts": 1,
+        "reason": "",
+        "anchor_month_attempt_count": 1,
+        "anchor_month_attempt_statuses": [
+          "200_ok"
+        ],
+        "anchor_month_retry_wait_seconds": [],
+        "anchor_month_recovered_after_transient_404": false,
+        "anchor_month_final_http_status": 200
+      },
+      "BRK-B": {
+        "status": "ok",
+        "observed_count": 19,
+        "latest_available_date": "2026-08-19",
+        "http_status": 200,
+        "attempts": 1,
+        "reason": "",
+        "anchor_month_attempt_count": 1,
+        "anchor_month_attempt_statuses": [
+          "200_ok"
+        ],
+        "anchor_month_retry_wait_seconds": [],
+        "anchor_month_recovered_after_transient_404": false,
+        "anchor_month_final_http_status": 200
+      },
+      "CTSH": {
+        "status": "ok",
+        "observed_count": 19,
+        "latest_available_date": "2026-08-19",
+        "http_status": 200,
+        "attempts": 1,
+        "reason": "",
+        "anchor_month_attempt_count": 1,
+        "anchor_month_attempt_statuses": [
+          "200_ok"
+        ],
+        "anchor_month_retry_wait_seconds": [],
+        "anchor_month_recovered_after_transient_404": false,
+        "anchor_month_final_http_status": 200
+      },
+      "DELL": {
+        "status": "ok",
+        "observed_count": 19,
+        "latest_available_date": "2026-08-19",
+        "http_status": 200,
+        "attempts": 1,
+        "reason": "",
+        "anchor_month_attempt_count": 1,
+        "anchor_month_attempt_statuses": [
+          "200_ok"
+        ],
+        "anchor_month_retry_wait_seconds": [],
+        "anchor_month_recovered_after_transient_404": false,
+        "anchor_month_final_http_status": 200
+      },
+      "DVN": {
+        "status": "ok",
+        "observed_count": 19,
+        "latest_available_date": "2026-08-19",
+        "http_status": 200,
+        "attempts": 1,
+        "reason": "",
+        "anchor_month_attempt_count": 1,
+        "anchor_month_attempt_statuses": [
+          "200_ok"
+        ],
+        "anchor_month_retry_wait_seconds": [],
+        "anchor_month_recovered_after_transient_404": false,
+        "anchor_month_final_http_status": 200
+      },
+      "GME": {
+        "status": "ok",
+        "observed_count": 19,
+        "latest_available_date": "2026-08-19",
+        "http_status": 200,
+        "attempts": 1,
+        "reason": "",
+        "anchor_month_attempt_count": 1,
+        "anchor_month_attempt_statuses": [
+          "200_ok"
+        ],
+        "anchor_month_retry_wait_seconds": [],
+        "anchor_month_recovered_after_transient_404": false,
+        "anchor_month_final_http_status": 200
+      },
+      "GOOGL": {
+        "status": "ok",
+        "observed_count": 19,
+        "latest_available_date": "2026-08-19",
+        "http_status": 200,
+        "attempts": 1,
+        "reason": "",
+        "anchor_month_attempt_count": 1,
+        "anchor_month_attempt_statuses": [
+          "200_ok"
+        ],
+        "anchor_month_retry_wait_seconds": [],
+        "anchor_month_recovered_after_transient_404": false,
+        "anchor_month_final_http_status": 200
+      },
+      "GPN": {
+        "status": "ok",
+        "observed_count": 19,
+        "latest_available_date": "2026-08-19",
+        "http_status": 200,
+        "attempts": 1,
+        "reason": "",
+        "anchor_month_attempt_count": 1,
+        "anchor_month_attempt_statuses": [
+          "200_ok"
+        ],
+        "anchor_month_retry_wait_seconds": [],
+        "anchor_month_recovered_after_transient_404": false,
+        "anchor_month_final_http_status": 200
+      },
+      "INTC": {
+        "status": "ok",
+        "observed_count": 19,
+        "latest_available_date": "2026-08-19",
+        "http_status": 200,
+        "attempts": 1,
+        "reason": "",
+        "anchor_month_attempt_count": 1,
+        "anchor_month_attempt_statuses": [
+          "200_ok"
+        ],
+        "anchor_month_retry_wait_seconds": [],
+        "anchor_month_recovered_after_transient_404": false,
+        "anchor_month_final_http_status": 200
+      },
+      "LDOS": {
+        "status": "ok",
+        "observed_count": 19,
+        "latest_available_date": "2026-08-19",
+        "http_status": 200,
+        "attempts": 2,
+        "reason": "",
+        "anchor_month_attempt_count": 2,
+        "anchor_month_attempt_statuses": [
+          "429",
+          "200_ok"
+        ],
+        "anchor_month_retry_wait_seconds": [
+          2.0
+        ],
+        "anchor_month_recovered_after_transient_404": false,
+        "anchor_month_final_http_status": 200
+      },
+      "MSFT": {
+        "status": "ok",
+        "observed_count": 19,
+        "latest_available_date": "2026-08-19",
+        "http_status": 200,
+        "attempts": 1,
+        "reason": "",
+        "anchor_month_attempt_count": 1,
+        "anchor_month_attempt_statuses": [
+          "200_ok"
+        ],
+        "anchor_month_retry_wait_seconds": [],
+        "anchor_month_recovered_after_transient_404": false,
+        "anchor_month_final_http_status": 200
+      },
+      "NCLH": {
+        "status": "ok",
+        "observed_count": 19,
+        "latest_available_date": "2026-08-19",
+        "http_status": 200,
+        "attempts": 1,
+        "reason": "",
+        "anchor_month_attempt_count": 1,
+        "anchor_month_attempt_statuses": [
+          "200_ok"
+        ],
+        "anchor_month_retry_wait_seconds": [],
+        "anchor_month_recovered_after_transient_404": false,
+        "anchor_month_final_http_status": 200
+      },
+      "NKE": {
+        "status": "ok",
+        "observed_count": 19,
+        "latest_available_date": "2026-08-19",
+        "http_status": 200,
+        "attempts": 1,
+        "reason": "",
+        "anchor_month_attempt_count": 1,
+        "anchor_month_attempt_statuses": [
+          "200_ok"
+        ],
+        "anchor_month_retry_wait_seconds": [],
+        "anchor_month_recovered_after_transient_404": false,
+        "anchor_month_final_http_status": 200
+      },
+      "QCOM": {
+        "status": "ok",
+        "observed_count": 19,
+        "latest_available_date": "2026-08-19",
+        "http_status": 200,
+        "attempts": 1,
+        "reason": "",
+        "anchor_month_attempt_count": 1,
+        "anchor_month_attempt_statuses": [
+          "200_ok"
+        ],
+        "anchor_month_retry_wait_seconds": [],
+        "anchor_month_recovered_after_transient_404": false,
+        "anchor_month_final_http_status": 200
+      },
+      "SBUX": {
+        "status": "ok",
+        "observed_count": 19,
+        "latest_available_date": "2026-08-19",
+        "http_status": 200,
+        "attempts": 1,
+        "reason": "",
+        "anchor_month_attempt_count": 1,
+        "anchor_month_attempt_statuses": [
+          "200_ok"
+        ],
+        "anchor_month_retry_wait_seconds": [],
+        "anchor_month_recovered_after_transient_404": false,
+        "anchor_month_final_http_status": 200
+      },
+      "STZ": {
+        "status": "ok",
+        "observed_count": 19,
+        "latest_available_date": "2026-08-19",
+        "http_status": 200,
+        "attempts": 1,
+        "reason": "",
+        "anchor_month_attempt_count": 1,
+        "anchor_month_attempt_statuses": [
+          "200_ok"
+        ],
+        "anchor_month_retry_wait_seconds": [],
+        "anchor_month_recovered_after_transient_404": false,
+        "anchor_month_final_http_status": 200
+      },
+      "SYK": {
+        "status": "ok",
+        "observed_count": 19,
+        "latest_available_date": "2026-08-19",
+        "http_status": 200,
+        "attempts": 1,
+        "reason": "",
+        "anchor_month_attempt_count": 1,
+        "anchor_month_attempt_statuses": [
+          "200_ok"
+        ],
+        "anchor_month_retry_wait_seconds": [],
+        "anchor_month_recovered_after_transient_404": false,
+        "anchor_month_final_http_status": 200
+      },
+      "TSLA": {
+        "status": "ok",
+        "observed_count": 19,
+        "latest_available_date": "2026-08-19",
+        "http_status": 200,
+        "attempts": 1,
+        "reason": "",
+        "anchor_month_attempt_count": 1,
+        "anchor_month_attempt_statuses": [
+          "200_ok"
+        ],
+        "anchor_month_retry_wait_seconds": [],
+        "anchor_month_recovered_after_transient_404": false,
+        "anchor_month_final_http_status": 200
+      },
+      "TTWO": {
+        "status": "ok",
+        "observed_count": 19,
+        "latest_available_date": "2026-08-19",
+        "http_status": 200,
+        "attempts": 1,
+        "reason": "",
+        "anchor_month_attempt_count": 1,
+        "anchor_month_attempt_statuses": [
+          "200_ok"
+        ],
+        "anchor_month_retry_wait_seconds": [],
+        "anchor_month_recovered_after_transient_404": false,
+        "anchor_month_final_http_status": 200
+      },
+      "UAL": {
+        "status": "ok",
+        "observed_count": 19,
+        "latest_available_date": "2026-08-19",
+        "http_status": 200,
+        "attempts": 1,
+        "reason": "",
+        "anchor_month_attempt_count": 1,
+        "anchor_month_attempt_statuses": [
+          "200_ok"
+        ],
+        "anchor_month_retry_wait_seconds": [],
+        "anchor_month_recovered_after_transient_404": false,
+        "anchor_month_final_http_status": 200
+      }
+    },
+    "anchor_month_response_reuse": {
+      "tickers_reused": [
+        "AAPL",
+        "ABBV",
+        "ADBE",
+        "AMZN",
+        "BKR",
+        "BRK-B",
+        "CTSH",
+        "DELL",
+        "DVN",
+        "GME",
+        "GOOGL",
+        "GPN",
+        "INTC",
+        "LDOS",
+        "MSFT",
+        "NCLH",
+        "NKE",
+        "QCOM",
+        "SBUX",
+        "STZ",
+        "SYK",
+        "TSLA",
+        "TTWO",
+        "UAL"
+      ],
+      "reused_in_memory_only": true,
+      "written_to_cache": false,
+      "second_anchor_month_request_issued": false
+    }
+  }
+}
