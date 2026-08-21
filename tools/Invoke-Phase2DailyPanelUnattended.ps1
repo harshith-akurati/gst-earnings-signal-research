@@ -76,8 +76,20 @@ Log "START mode=$Mode stamp=$stamp"
 # ---- repository resolution -------------------------------------------------
 if (-not (Test-Path -LiteralPath $RepoRoot)) { Fail 3 "RepoRoot does not exist: $RepoRoot" }
 
-$top = (& git -C $RepoRoot rev-parse --show-toplevel 2>$null)
-if ($LASTEXITCODE -ne 0 -or -not $top) { Fail 3 "git rev-parse --show-toplevel failed under $RepoRoot" }
+# git writes to stderr on failure, and under $ErrorActionPreference='Stop' a
+# native command's stderr is promoted to a terminating error before the exit
+# code can be inspected. Probe with error action relaxed so the abort path
+# below owns the outcome and the documented exit code is what callers see.
+$top = $null
+try {
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    $top = (& git -C $RepoRoot rev-parse --show-toplevel 2>$null | Select-Object -First 1)
+    $rc = $LASTEXITCODE
+} finally {
+    $ErrorActionPreference = $prev
+}
+if ($rc -ne 0 -or -not $top) { Fail 3 "git rev-parse --show-toplevel failed under $RepoRoot (git exit $rc)" }
 $topNorm  = (Resolve-Path -LiteralPath $top).Path.TrimEnd('\')
 $rootNorm = (Resolve-Path -LiteralPath $RepoRoot).Path.TrimEnd('\')
 if ($topNorm -ne $rootNorm) { Fail 3 "RepoRoot '$rootNorm' is not a repository toplevel (git says '$topNorm')" }
