@@ -84,8 +84,12 @@ $top = $null
 try {
     $prev = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
-    $top = (& git -C $RepoRoot rev-parse --show-toplevel 2>$null | Select-Object -First 1)
-    $rc = $LASTEXITCODE
+    # Capture fully before selecting: piping a native command into
+    # Select-Object -First closes the pipeline early, terminates git and leaves
+    # a misleading $LASTEXITCODE.
+    $out = @(& git -C $RepoRoot rev-parse --show-toplevel 2>$null)
+    $rc  = $LASTEXITCODE
+    if ($out.Count -gt 0) { $top = $out[0] }
 } finally {
     $ErrorActionPreference = $prev
 }
