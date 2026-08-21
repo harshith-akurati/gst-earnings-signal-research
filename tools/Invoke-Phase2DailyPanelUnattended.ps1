@@ -8,16 +8,29 @@
   publishes a content-addressed copy outside the repository working tree, and
   the scheduled task points at that copy.
 
-  Why the deployed copy lives outside the repo: on 2026-08-20 the previous
-  in-repo runner was removed from the working tree within ~60 s of its first
-  scheduled execution, while remaining intact in Git. No git operation
-  performed it (clean reflog, no checkout/reset/clean) and Microsoft Defender
-  was in Passive Mode with real-time protection disabled and an empty
-  detection history, so the surviving explanation is a third-party
-  behaviour-blocker (AVG and McAfee are both registered on this host) acting
-  on a repo-resident PowerShell script that shells out to `git push`. The ROST
-  capture runner, which has lived outside the repo since 2026-08-19 and
-  executes normally, is the working precedent this follows.
+  Why the deployed copy lives outside the repo:
+  UNRESOLVED_POSSIBLE_THIRD_PARTY_SECURITY_REMOVAL.
+
+  On 2026-08-20 the previous in-repo runner was removed from the working tree
+  within ~60 s of its first scheduled execution while remaining intact in Git,
+  leaving the scheduled task pointing at a path that no longer existed.
+
+  What the evidence establishes: it was not Git (clean reflog, no checkout,
+  reset or clean) and not Microsoft Defender (Passive Mode, real-time
+  protection disabled, empty detection history). The file was absent from a
+  recursive -Force search of the user profile, so it was removed rather than
+  moved.
+
+  What the evidence does NOT establish: the actual agent. AVG Antivirus and
+  McAfee are both registered on this host, but neither has been shown to have
+  removed the file -- no quarantine record was produced for either, and no
+  vendor log was read. Naming either as the cause would be an inference beyond
+  the evidence, and is not made here.
+
+  Relocating outside the working tree is therefore mitigation against a real
+  but unattributed removal, not a fix for a diagnosed one. The ROST capture
+  runner, which has lived outside the repo since 2026-08-19 and executes
+  normally, is the working precedent this follows.
 
   Repository location is resolved with `git -C <RepoRoot> rev-parse --show-toplevel`
   and compared against the supplied path. A mismatch aborts; the runner never
@@ -30,10 +43,13 @@
 
 .NOTES
   Exit codes -- the runner never stages anything unless validation returns 0.
-    0 success (or preflight OK)   3 repo/environment resolution failed
-    4 another run holds the lock  5 panel exceeded the outer timeout
-    6 a required artifact is missing (marker or final CSV)
-    7 schema validation failed    8 staging mismatch
+     0 success (or preflight OK)   3 repo/environment resolution failed
+     4 another run holds the lock  5 panel exceeded the outer timeout
+     6 a required artifact is missing (marker or final CSV)
+     7 schema validation failed    8 staging mismatch
+     9 commit succeeded but push failed (commit is local only)
+    10 refused: outside the 02:05-02:25 America/Chicago window. Nothing was
+       done -- no network, no git, no staging, no commit, no push.
 #>
 [CmdletBinding()]
 param(
@@ -45,7 +61,12 @@ param(
 
     [string]$ExpectedBranch = 'phase5-unattended-panel-recovery',
     [int]   $TimeoutSec     = 3000,
-    [switch]$NoPush
+    [switch]$NoPush,
+
+    # TEST USE ONLY. Supplies the instant the local-time gate evaluates instead
+    # of the host clock. Its use is logged, so an injected clock can never be
+    # mistaken for a real firing.
+    [string]$NowOverride
 )
 
 $ErrorActionPreference = 'Stop'
@@ -72,6 +93,35 @@ function Fail([int]$code, [string]$why) {
 }
 
 Log "START mode=$Mode stamp=$stamp"
+
+# ---- local-time execution gate --------------------------------------------
+# FIRST action of substance, deliberately ahead of repository resolution. A
+# refusal here performs no network call, no git command, no staging, no commit
+# and no push -- it writes this log line and exits 10. StartWhenAvailable is
+# False on the task, so a missed cycle is skipped rather than deferred; this
+# gate is the second half of that guarantee, refusing a firing that arrives
+# outside 02:05-02:25 America/Chicago however it got there.
+$gate = Join-Path $PSScriptRoot 'phase2_window_gate.py'
+if (-not (Test-Path -LiteralPath $gate)) {
+    # The deployed runner lives outside the repository, so the gate is resolved
+    # from the repository when it is not beside the runner.
+    $gate = Join-Path $RepoRoot 'tools\phase2_window_gate.py'
+}
+if (-not (Test-Path -LiteralPath $gate)) { Fail 3 "window gate module missing: $gate" }
+
+$pythonForGate = (Get-Command python -ErrorAction SilentlyContinue)
+if (-not $pythonForGate) { Fail 3 'python not found on PATH (needed by the window gate)' }
+
+$gateArgs = @($gate)
+if ($NowOverride) { $gateArgs += @('--now', $NowOverride) }
+$gateOut = & $pythonForGate.Source @gateArgs 2>&1
+$gateCode = $LASTEXITCODE
+foreach ($l in $gateOut) { Log "  $l" }
+if ($gateCode -ne 0) {
+    Log 'REFUSED by local-time gate: no network, git, staging, commit or push was performed'
+    exit 10
+}
+Log 'window gate OPEN'
 
 # ---- repository resolution -------------------------------------------------
 if (-not (Test-Path -LiteralPath $RepoRoot)) { Fail 3 "RepoRoot does not exist: $RepoRoot" }
