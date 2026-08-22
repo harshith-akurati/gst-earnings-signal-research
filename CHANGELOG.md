@@ -1,6 +1,49 @@
 # Changelog
 
 
+## 2026-08-22 — Incident: AVG quarantined the unattended PowerShell runners; task removal unresolved
+
+Infrastructure incident only. **No scientific design, hypothesis, estimand, gate, universe or feature
+definition is touched, and no result is affected — this execution path never produced one.**
+
+**What happened.** Three PowerShell copies of the unattended Phase 2 daily-panel runner were removed
+from disk between 2026-08-20 and 2026-08-21. AVG Antivirus quarantine records name all three with
+detection labels, original paths and timestamps: the first in-repository copy as `IDP.Generic` on
+2026-08-20 01:25:30, and the deployed copies `dd705a5dbe42` and `426d24a47ae3` as `IDP.HELU.PSD11` on
+2026-08-21 at 14:55:42 and 15:36:29. `IDP.HELU.PSD11` is a PowerShell behavioural heuristic; the
+runner spawned a child process and invoked `git push`, which is the pattern it targets. Because the
+detection is behavioural rather than signature-based, **relocating the runner outside the repository
+did not prevent it** — copies inside and outside the repository were both taken, and copies inside
+and outside both survived.
+
+**Runner removals are classified `SECURITY_PRODUCT_REMOVED_BY_AVG`,** on quarantine records naming
+each file, timestamp agreement to the second across three independent AVG files and the runners
+directory mtime, absence from the Recycle Bin, no PowerShell session running at the deletion instant,
+and Microsoft Defender excluded (Passive Mode, real-time protection off, zero detections).
+
+**The scheduled-task removal is classified `CAUSE_UNRESOLVED` and is NOT attributed to AVG.** No AVG
+artifact references the task name; AVG's records name files only. The Task Scheduler Operational
+channel was disabled for the entire period, and the Security log and `TaskCache` registry were
+unreadable without elevation, so no source capable of explaining the removal was available. A
+disabled log is not evidence that no deletion occurred. The task and the runner did **not** disappear
+together: the runner was quarantined at 15:36:29 on 2026-08-21, and the task survived that by hours
+and was still present when it was later disabled.
+
+**No collection occurred.** No panel artifact, no machine-created commit, no push; branch and remote
+both stand at `b38b826`. Every recorded invocation was a preflight or a gate refusal, and **no
+network-bearing panel attempt was ever made by the unattended path.**
+
+**Correction.** An earlier status report stated the 02:15 cycle "did not fire overnight" and treated
+that as a failure. That was wrong and is withdrawn: the task's first firing would have been
+2026-08-22 02:15, and the observation was made before that time. With `StartWhenAvailable=False`
+nothing was missed. **No missed-cycle claim is made and no date is backfilled.**
+
+**No security setting was weakened.** No exclusion was added, nothing was disabled or reconfigured,
+and **no quarantined file was restored.** The replacement is a different implementation, not a
+reinstatement of the detected one.
+
+Full detail: `Correction_Overlays/2026-08-22_Unattended_Runner_Removal/INCIDENT_REPORT_2026-08-22.md`.
+
 ## 2026-08-17 — Synthesis manuscript: "Signal Without Strategy"
 
 Converts the completed research program into a submission-ready paper. **No new financial data was
