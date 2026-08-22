@@ -172,20 +172,36 @@ check("5e. overlay states originals are unchanged and hash-locked",
 check("5f. overlay records the manuscript's 0.0131 / 0.98332 as affected",
       "0.0131" in text and "0.98332" in text)
 
-# Any *new* markdown that cites the affected statistic must carry the caveat.
-EXEMPT = {OVERLAY.name}
+# Any markdown that cites the affected statistic must carry a DISPOSITION:
+# either the pending-correction caveat, or -- once Phase 3 has run -- an explicit
+# SUPERSEDED relabel pointing at the corrected artifact. A bare citation with
+# neither is forbidden. Both dispositions are accepted because the frozen design
+# document legitimately carries only the latter and must not be edited.
+DISPOSITIONS = (CAVEAT, "SUPERSEDED")
+
+
+def has_disposition(body: str) -> bool:
+    return any(d in body for d in DISPOSITIONS)
+
+
 offenders = []
 for md in ROOT.rglob("*.md"):
-    if ".git" in md.parts or md.name in EXEMPT:
+    if ".git" in md.parts:
         continue
     try:
         body = md.read_text(encoding="utf-8", errors="replace")
     except Exception:                                               # noqa: BLE001
         continue
-    if "Q1_abs_move_high_vs_control" in body and CAVEAT not in body:
+    if "Q1_abs_move_high_vs_control" in body and not has_disposition(body):
         offenders.append(str(md.relative_to(ROOT)))
-check("5g. no markdown cites Q1_abs_move_high_vs_control without the caveat",
+check("5g. no markdown cites Q1_abs_move_high_vs_control without a disposition",
       not offenders, "; ".join(offenders[:4]))
+check("5h. the guard still rejects a bare citation carrying neither disposition",
+      not has_disposition("Q1_abs_move_high_vs_control gave t = 2.138 and the answer was YES."))
+check("5i. every overlay document that names the statistic carries a disposition",
+      all(has_disposition(p.read_text(encoding='utf-8', errors='replace'))
+          for p in OVERLAY_DIR.glob("*.md")
+          if "Q1_abs_move_high_vs_control" in p.read_text(encoding='utf-8', errors='replace')))
 
 # --- 6. unaffected findings are not labelled invalid ------------------------
 
@@ -261,6 +277,36 @@ check("8d. the guard reproduces the raw-population self-match count (20)",
       live["self_matches"] == 20, str(live["self_matches"]))
 check("8e. the guard flags the current population as defective",
       live["self_matches"] > 0 and live["reused_identities"] > 0)
+
+# --- 8b. corrected artifact integrity (present only after Phase 3) ---------
+
+CORRECTED = OVERLAY_DIR / "CORRECTED_RESULTS_v1.0.json"
+if CORRECTED.is_file():
+    print("\n=== 8b. corrected artifact ===")
+    cr = json.loads(CORRECTED.read_text(encoding="utf-8"))
+    smp, pri = cr["sample"], cr["primary"]
+    check("8b1. corrected run drops exactly the 20 self-matches",
+          smp["dropped_self_match_E1"] == 20, str(smp["dropped_self_match_E1"]))
+    check("8b2. surviving pairs have no reused control identity",
+          smp["distinct_control_identities"] == smp["surviving_pairs"],
+          f"{smp['distinct_control_identities']} vs {smp['surviving_pairs']}")
+    check("8b3. surviving pairs have no reused treated identity",
+          smp["distinct_treated_identities"] == smp["surviving_pairs"])
+    check("8b4. observations lost equals E1 + E2 drops",
+          smp["observations_lost_vs_original_treated_arm"]
+          == smp["dropped_self_match_E1"] + smp["dropped_no_unique_control_E2"])
+    check("8b5. corrected artifact marks the original SUPERSEDED",
+          cr["original_for_comparison"]["citation_status"] == "SUPERSEDED_BY_THIS_ARTIFACT")
+    check("8b6. corrected artifact preserves the original numbers for citation",
+          cr["original_for_comparison"]["t_stat"] == 2.138
+          and cr["original_for_comparison"]["difference_pp"] == 1.4411)
+    check("8b7. corrected scope is retrospective-only, not HYP-01 confirmation",
+          "NOT_HYP01_CONFIRMATION" in cr["status"])
+    check("8b8. inference is CR2 clustered on ticker",
+          pri["inference"]["cluster_unit"] == "ticker" and "CR2" in pri["inference"]["vcov"])
+    check("8b9. corrective report does NOT recompute the manuscript incremental null",
+          "remains un-recomputed" in (OVERLAY_DIR / "CORRECTIVE_REPORT_2026-08-22.md")
+          .read_text(encoding="utf-8"))
 
 # --- 9. the overlay must not pre-empt Phase 3 -------------------------------
 

@@ -1,0 +1,606 @@
+{
+  "artifact": "C5_CONTROL_MATCHING_CORRECTED_RESULTS",
+  "version": "1.0",
+  "status": "RETROSPECTIVE_DEVELOPMENT_ONLY_NOT_HYP01_CONFIRMATION",
+  "design": "CORRECTIVE_DESIGN_v1.0_FROZEN_2026-08-22.md",
+  "supersedes": "Q1_abs_move_high_vs_control in RETROSPECTIVE_MARKET_RESPONSE_RESULTS_v1.0.json",
+  "method_note": "Restriction of the committed matched set, not a re-match; the control candidate pool is not committed.",
+  "sample": {
+    "pairs_before_correction": 133,
+    "dropped_self_match_E1": 20,
+    "dropped_no_unique_control_E2": 40,
+    "surviving_pairs": 73,
+    "distinct_control_identities": 73,
+    "distinct_treated_identities": 73,
+    "observations_lost_vs_original_treated_arm": 60
+  },
+  "original_for_comparison": {
+    "statistic": "unpaired Welch, high vs control",
+    "high_mean_abs_pct": 7.8871,
+    "n_high": 152,
+    "control_mean_abs_pct": 6.4459,
+    "n_control": 133,
+    "difference_pp": 1.4411,
+    "t_stat": 2.138,
+    "citation_status": "SUPERSEDED_BY_THIS_ARTIFACT"
+  },
+  "primary": {
+    "estimand": "ATT on |day_return|, percentage points",
+    "statistic": "mean paired difference over surviving matched pairs",
+    "n_pairs": 73,
+    "mean_paired_difference_pp": 2.0797,
+    "naive_paired_t_for_reference_only": 2.492,
+    "inference": {
+      "vcov": "CR2 (BRL)",
+      "cluster_unit": "ticker",
+      "df_method": "coefficient-specific Satterthwaite",
+      "coef_pp": 2.0797,
+      "cr2_se_pp": 0.638,
+      "satterthwaite_df": 19.742,
+      "t_stat": 3.26,
+      "p_value": 0.00397,
+      "ci95_pp": [
+        0.7479,
+        3.4116
+      ],
+      "n_clusters": 26
+    }
+  },
+  "sensitivity": {
+    "a_reuse_retained_self_match_excluded": {
+      "n_pairs": 113,
+      "coef_pp": 1.9591,
+      "cr2_se_pp": 0.9254,
+      "satterthwaite_df": 15.118,
+      "t_stat": 2.117,
+      "p_value": 0.05125,
+      "ci95_pp": [
+        -0.012,
+        3.9302
+      ],
+      "n_clusters": 26
+    },
+    "b_unpaired_welch_on_corrected_arms": {
+      "mean_treated_pp": 8.0286,
+      "n_treated": 73,
+      "mean_control_pp": 5.9489,
+      "n_control": 73,
+      "difference_pp": 2.0797,
+      "t_stat": 2.351,
+      "welch_df": 138.58,
+      "p_value": 0.02014
+    },
+    "c_leave_one_ticker_out_mean_paired_diff_pp": {
+      "n_refits": 26,
+      "min": 1.8343,
+      "max": 2.3772,
+      "by_excluded_ticker": {
+        "AAPL": 2.0593,
+        "ABBV": 2.0803,
+        "ADBE": 1.8833,
+        "AMZN": 2.1093,
+        "BKR": 1.994,
+        "COHR": 2.3224,
+        "CTSH": 2.123,
+        "DELL": 2.1333,
+        "DVN": 1.9689,
+        "GME": 1.8343,
+        "GOOGL": 2.1599,
+        "GPN": 2.1085,
+        "INTC": 2.0053,
+        "LDOS": 2.0663,
+        "MSFT": 2.1847,
+        "NCLH": 1.9217,
+        "NFLX": 2.276,
+        "NKE": 1.9882,
+        "NVDA": 1.9032,
+        "QCOM": 2.1548,
+        "SBUX": 2.1342,
+        "STZ": 2.3772,
+        "SYK": 2.1014,
+        "TSLA": 2.0763,
+        "TTWO": 2.1355,
+        "UAL": 1.9709
+      }
+    },
+    "d_excluding_8_overlap_identities": {
+      "n_pairs": 65,
+      "coef_pp": 2.5682,
+      "cr2_se_pp": 0.6347,
+      "satterthwaite_df": 18.128,
+      "t_stat": 4.046,
+      "p_value": 0.00075,
+      "ci95_pp": [
+        1.2354,
+        3.9009
+      ],
+      "n_clusters": 25
+    },
+    "e_balance": {
+      "mean_abs_pre_drift_treated_pp": 3.619,
+      "mean_abs_pre_drift_control_pp": 2.9662,
+      "same_ticker_pairs": 72,
+      "bmo_amc_concordant_pairs": 73,
+      "treated_year_distribution": {
+        "2021": 9,
+        "2022": 13,
+        "2023": 19,
+        "2024": 18,
+        "2025": 14
+      },
+      "control_year_distribution": {
+        "2021": 15,
+        "2022": 14,
+        "2023": 12,
+        "2024": 13,
+        "2025": 19
+      }
+    }
+  },
+  "dropped_detail": {
+    "self_matched": [
+      {
+        "pair_id": 29,
+        "ticker": "BKR",
+        "earnings_date": "2022-01-20"
+      },
+      {
+        "pair_id": 32,
+        "ticker": "BRK-B",
+        "earnings_date": "2025-02-22"
+      },
+      {
+        "pair_id": 41,
+        "ticker": "GME",
+        "earnings_date": "2024-03-26"
+      },
+      {
+        "pair_id": 48,
+        "ticker": "GPN",
+        "earnings_date": "2022-10-31"
+      },
+      {
+        "pair_id": 49,
+        "ticker": "GPN",
+        "earnings_date": "2024-08-07"
+      },
+      {
+        "pair_id": 53,
+        "ticker": "INTC",
+        "earnings_date": "2024-01-25"
+      },
+      {
+        "pair_id": 56,
+        "ticker": "LDOS",
+        "earnings_date": "2021-08-03"
+      },
+      {
+        "pair_id": 58,
+        "ticker": "LDOS",
+        "earnings_date": "2023-10-31"
+      },
+      {
+        "pair_id": 59,
+        "ticker": "LDOS",
+        "earnings_date": "2024-02-13"
+      },
+      {
+        "pair_id": 79,
+        "ticker": "NFLX",
+        "earnings_date": "2022-01-20"
+      },
+      {
+        "pair_id": 82,
+        "ticker": "NFLX",
+        "earnings_date": "2023-01-19"
+      },
+      {
+        "pair_id": 101,
+        "ticker": "NKE",
+        "earnings_date": "2024-03-21"
+      },
+      {
+        "pair_id": 119,
+        "ticker": "QCOM",
+        "earnings_date": "2025-02-05"
+      },
+      {
+        "pair_id": 126,
+        "ticker": "SBUX",
+        "earnings_date": "2024-01-30"
+      },
+      {
+        "pair_id": 128,
+        "ticker": "SBUX",
+        "earnings_date": "2025-01-28"
+      },
+      {
+        "pair_id": 134,
+        "ticker": "STZ",
+        "earnings_date": "2025-01-10"
+      },
+      {
+        "pair_id": 135,
+        "ticker": "SYK",
+        "earnings_date": "2023-01-31"
+      },
+      {
+        "pair_id": 139,
+        "ticker": "SYK",
+        "earnings_date": "2025-01-28"
+      },
+      {
+        "pair_id": 140,
+        "ticker": "SYK",
+        "earnings_date": "2025-07-31"
+      },
+      {
+        "pair_id": 149,
+        "ticker": "TTWO",
+        "earnings_date": "2025-02-06"
+      }
+    ],
+    "no_unique_control": [
+      {
+        "pair_id": 6,
+        "ticker": "ADBE",
+        "treated_date": "2021-03-23",
+        "lost_control": [
+          "ADBE",
+          "2023-09-14"
+        ]
+      },
+      {
+        "pair_id": 13,
+        "ticker": "ADBE",
+        "treated_date": "2024-03-14",
+        "lost_control": [
+          "ADBE",
+          "2023-09-14"
+        ]
+      },
+      {
+        "pair_id": 14,
+        "ticker": "ADBE",
+        "treated_date": "2024-06-13",
+        "lost_control": [
+          "ADBE",
+          "2023-06-15"
+        ]
+      },
+      {
+        "pair_id": 15,
+        "ticker": "ADBE",
+        "treated_date": "2024-12-11",
+        "lost_control": [
+          "ADBE",
+          "2023-09-14"
+        ]
+      },
+      {
+        "pair_id": 16,
+        "ticker": "ADBE",
+        "treated_date": "2025-03-12",
+        "lost_control": [
+          "ADBE",
+          "2023-06-15"
+        ]
+      },
+      {
+        "pair_id": 17,
+        "ticker": "ADBE",
+        "treated_date": "2025-06-12",
+        "lost_control": [
+          "ADBE",
+          "2022-06-16"
+        ]
+      },
+      {
+        "pair_id": 23,
+        "ticker": "AMZN",
+        "treated_date": "2023-08-03",
+        "lost_control": [
+          "AMZN",
+          "2025-02-06"
+        ]
+      },
+      {
+        "pair_id": 25,
+        "ticker": "AMZN",
+        "treated_date": "2024-04-30",
+        "lost_control": [
+          "AMZN",
+          "2022-02-03"
+        ]
+      },
+      {
+        "pair_id": 26,
+        "ticker": "AMZN",
+        "treated_date": "2024-08-01",
+        "lost_control": [
+          "AMZN",
+          "2021-04-29"
+        ]
+      },
+      {
+        "pair_id": 27,
+        "ticker": "AMZN",
+        "treated_date": "2025-07-31",
+        "lost_control": [
+          "AMZN",
+          "2022-02-03"
+        ]
+      },
+      {
+        "pair_id": 54,
+        "ticker": "INTC",
+        "treated_date": "2024-08-01",
+        "lost_control": [
+          "INTC",
+          "2022-04-28"
+        ]
+      },
+      {
+        "pair_id": 64,
+        "ticker": "MSFT",
+        "treated_date": "2022-04-26",
+        "lost_control": [
+          "MSFT",
+          "2025-04-30"
+        ]
+      },
+      {
+        "pair_id": 65,
+        "ticker": "MSFT",
+        "treated_date": "2022-07-26",
+        "lost_control": [
+          "MSFT",
+          "2025-04-30"
+        ]
+      },
+      {
+        "pair_id": 66,
+        "ticker": "MSFT",
+        "treated_date": "2022-10-25",
+        "lost_control": [
+          "MSFT",
+          "2025-04-30"
+        ]
+      },
+      {
+        "pair_id": 67,
+        "ticker": "MSFT",
+        "treated_date": "2023-01-24",
+        "lost_control": [
+          "MSFT",
+          "2025-04-30"
+        ]
+      },
+      {
+        "pair_id": 69,
+        "ticker": "MSFT",
+        "treated_date": "2023-10-24",
+        "lost_control": [
+          "MSFT",
+          "2024-04-25"
+        ]
+      },
+      {
+        "pair_id": 72,
+        "ticker": "MSFT",
+        "treated_date": "2025-01-29",
+        "lost_control": [
+          "MSFT",
+          "2021-04-27"
+        ]
+      },
+      {
+        "pair_id": 73,
+        "ticker": "MSFT",
+        "treated_date": "2025-07-30",
+        "lost_control": [
+          "MSFT",
+          "2024-04-25"
+        ]
+      },
+      {
+        "pair_id": 76,
+        "ticker": "NFLX",
+        "treated_date": "2021-04-20",
+        "lost_control": [
+          "NFLX",
+          "2025-04-17"
+        ]
+      },
+      {
+        "pair_id": 77,
+        "ticker": "NFLX",
+        "treated_date": "2021-07-20",
+        "lost_control": [
+          "NFLX",
+          "2022-01-20"
+        ]
+      },
+      {
+        "pair_id": 80,
+        "ticker": "NFLX",
+        "treated_date": "2022-04-19",
+        "lost_control": [
+          "NFLX",
+          "2023-01-19"
+        ]
+      },
+      {
+        "pair_id": 83,
+        "ticker": "NFLX",
+        "treated_date": "2023-04-18",
+        "lost_control": [
+          "NFLX",
+          "2025-04-17"
+        ]
+      },
+      {
+        "pair_id": 87,
+        "ticker": "NFLX",
+        "treated_date": "2024-07-18",
+        "lost_control": [
+          "NFLX",
+          "2022-01-20"
+        ]
+      },
+      {
+        "pair_id": 88,
+        "ticker": "NFLX",
+        "treated_date": "2024-10-17",
+        "lost_control": [
+          "NFLX",
+          "2022-01-20"
+        ]
+      },
+      {
+        "pair_id": 90,
+        "ticker": "NFLX",
+        "treated_date": "2025-07-17",
+        "lost_control": [
+          "NFLX",
+          "2024-04-18"
+        ]
+      },
+      {
+        "pair_id": 91,
+        "ticker": "NFLX",
+        "treated_date": "2025-10-21",
+        "lost_control": [
+          "NFLX",
+          "2022-01-20"
+        ]
+      },
+      {
+        "pair_id": 92,
+        "ticker": "NKE",
+        "treated_date": "2021-06-24",
+        "lost_control": [
+          "NKE",
+          "2024-12-19"
+        ]
+      },
+      {
+        "pair_id": 93,
+        "ticker": "NKE",
+        "treated_date": "2021-12-20",
+        "lost_control": [
+          "NKE",
+          "2024-12-19"
+        ]
+      },
+      {
+        "pair_id": 94,
+        "ticker": "NKE",
+        "treated_date": "2022-03-21",
+        "lost_control": [
+          "NKE",
+          "2025-12-18"
+        ]
+      },
+      {
+        "pair_id": 98,
+        "ticker": "NKE",
+        "treated_date": "2023-06-29",
+        "lost_control": [
+          "NKE",
+          "2024-12-19"
+        ]
+      },
+      {
+        "pair_id": 99,
+        "ticker": "NKE",
+        "treated_date": "2023-09-28",
+        "lost_control": [
+          "NKE",
+          "2024-12-19"
+        ]
+      },
+      {
+        "pair_id": 100,
+        "ticker": "NKE",
+        "treated_date": "2023-12-21",
+        "lost_control": [
+          "NKE",
+          "2024-12-19"
+        ]
+      },
+      {
+        "pair_id": 111,
+        "ticker": "QCOM",
+        "treated_date": "2021-07-28",
+        "lost_control": [
+          "QCOM",
+          "2025-11-05"
+        ]
+      },
+      {
+        "pair_id": 112,
+        "ticker": "QCOM",
+        "treated_date": "2021-11-03",
+        "lost_control": [
+          "QCOM",
+          "2025-11-05"
+        ]
+      },
+      {
+        "pair_id": 115,
+        "ticker": "QCOM",
+        "treated_date": "2023-05-03",
+        "lost_control": [
+          "QCOM",
+          "2025-11-05"
+        ]
+      },
+      {
+        "pair_id": 116,
+        "ticker": "QCOM",
+        "treated_date": "2023-08-02",
+        "lost_control": [
+          "QCOM",
+          "2025-02-05"
+        ]
+      },
+      {
+        "pair_id": 121,
+        "ticker": "SBUX",
+        "treated_date": "2021-07-27",
+        "lost_control": [
+          "SBUX",
+          "2025-01-28"
+        ]
+      },
+      {
+        "pair_id": 122,
+        "ticker": "SBUX",
+        "treated_date": "2021-10-28",
+        "lost_control": [
+          "SBUX",
+          "2025-01-28"
+        ]
+      },
+      {
+        "pair_id": 123,
+        "ticker": "SBUX",
+        "treated_date": "2023-05-02",
+        "lost_control": [
+          "SBUX",
+          "2025-01-28"
+        ]
+      },
+      {
+        "pair_id": 148,
+        "ticker": "TTWO",
+        "treated_date": "2024-05-16",
+        "lost_control": [
+          "TTWO",
+          "2021-11-03"
+        ]
+      }
+    ]
+  }
+}
