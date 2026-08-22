@@ -1,0 +1,245 @@
+{
+  "treated_rows": 152,
+  "control_rows": 133,
+  "distinct_treated_identities": 152,
+  "distinct_control_identities": 85,
+  "self_match_count": 20,
+  "reused_control_identities": 24,
+  "reused_extra_rows": 48,
+  "max_reuse": 6,
+  "multiplicity_distribution": {
+    "1": 61,
+    "2": 12,
+    "3": 6,
+    "4": 2,
+    "5": 2,
+    "6": 2
+  },
+  "control_identities_used_exactly_once": 61,
+  "rows_belonging_to_reused_identities": 72,
+  "byte_identical_duplicate_control_rows": 0,
+  "self_matched_pairs": [
+    {
+      "pair_id": 29,
+      "ticker": "BKR",
+      "earnings_date": "2022-01-20"
+    },
+    {
+      "pair_id": 32,
+      "ticker": "BRK-B",
+      "earnings_date": "2025-02-22"
+    },
+    {
+      "pair_id": 41,
+      "ticker": "GME",
+      "earnings_date": "2024-03-26"
+    },
+    {
+      "pair_id": 48,
+      "ticker": "GPN",
+      "earnings_date": "2022-10-31"
+    },
+    {
+      "pair_id": 49,
+      "ticker": "GPN",
+      "earnings_date": "2024-08-07"
+    },
+    {
+      "pair_id": 53,
+      "ticker": "INTC",
+      "earnings_date": "2024-01-25"
+    },
+    {
+      "pair_id": 56,
+      "ticker": "LDOS",
+      "earnings_date": "2021-08-03"
+    },
+    {
+      "pair_id": 58,
+      "ticker": "LDOS",
+      "earnings_date": "2023-10-31"
+    },
+    {
+      "pair_id": 59,
+      "ticker": "LDOS",
+      "earnings_date": "2024-02-13"
+    },
+    {
+      "pair_id": 79,
+      "ticker": "NFLX",
+      "earnings_date": "2022-01-20"
+    },
+    {
+      "pair_id": 82,
+      "ticker": "NFLX",
+      "earnings_date": "2023-01-19"
+    },
+    {
+      "pair_id": 101,
+      "ticker": "NKE",
+      "earnings_date": "2024-03-21"
+    },
+    {
+      "pair_id": 119,
+      "ticker": "QCOM",
+      "earnings_date": "2025-02-05"
+    },
+    {
+      "pair_id": 126,
+      "ticker": "SBUX",
+      "earnings_date": "2024-01-30"
+    },
+    {
+      "pair_id": 128,
+      "ticker": "SBUX",
+      "earnings_date": "2025-01-28"
+    },
+    {
+      "pair_id": 134,
+      "ticker": "STZ",
+      "earnings_date": "2025-01-10"
+    },
+    {
+      "pair_id": 135,
+      "ticker": "SYK",
+      "earnings_date": "2023-01-31"
+    },
+    {
+      "pair_id": 139,
+      "ticker": "SYK",
+      "earnings_date": "2025-01-28"
+    },
+    {
+      "pair_id": 140,
+      "ticker": "SYK",
+      "earnings_date": "2025-07-31"
+    },
+    {
+      "pair_id": 149,
+      "ticker": "TTWO",
+      "earnings_date": "2025-02-06"
+    }
+  ],
+  "reused_controls": [
+    {
+      "ticker": "ADBE",
+      "earnings_date": "2022-06-16",
+      "times_used": 2
+    },
+    {
+      "ticker": "ADBE",
+      "earnings_date": "2023-06-15",
+      "times_used": 3
+    },
+    {
+      "ticker": "ADBE",
+      "earnings_date": "2023-09-14",
+      "times_used": 4
+    },
+    {
+      "ticker": "AMZN",
+      "earnings_date": "2021-04-29",
+      "times_used": 2
+    },
+    {
+      "ticker": "AMZN",
+      "earnings_date": "2022-02-03",
+      "times_used": 3
+    },
+    {
+      "ticker": "AMZN",
+      "earnings_date": "2025-02-06",
+      "times_used": 2
+    },
+    {
+      "ticker": "INTC",
+      "earnings_date": "2022-04-28",
+      "times_used": 2
+    },
+    {
+      "ticker": "LDOS",
+      "earnings_date": "2021-08-03",
+      "times_used": 2
+    },
+    {
+      "ticker": "LDOS",
+      "earnings_date": "2023-10-31",
+      "times_used": 2
+    },
+    {
+      "ticker": "MSFT",
+      "earnings_date": "2021-04-27",
+      "times_used": 2
+    },
+    {
+      "ticker": "MSFT",
+      "earnings_date": "2024-04-25",
+      "times_used": 3
+    },
+    {
+      "ticker": "MSFT",
+      "earnings_date": "2025-04-30",
+      "times_used": 5
+    },
+    {
+      "ticker": "NFLX",
+      "earnings_date": "2022-01-20",
+      "times_used": 6
+    },
+    {
+      "ticker": "NFLX",
+      "earnings_date": "2023-01-19",
+      "times_used": 3
+    },
+    {
+      "ticker": "NFLX",
+      "earnings_date": "2024-04-18",
+      "times_used": 2
+    },
+    {
+      "ticker": "NFLX",
+      "earnings_date": "2025-04-17",
+      "times_used": 3
+    },
+    {
+      "ticker": "NKE",
+      "earnings_date": "2024-03-21",
+      "times_used": 2
+    },
+    {
+      "ticker": "NKE",
+      "earnings_date": "2024-12-19",
+      "times_used": 6
+    },
+    {
+      "ticker": "NKE",
+      "earnings_date": "2025-12-18",
+      "times_used": 2
+    },
+    {
+      "ticker": "QCOM",
+      "earnings_date": "2025-02-05",
+      "times_used": 3
+    },
+    {
+      "ticker": "QCOM",
+      "earnings_date": "2025-11-05",
+      "times_used": 4
+    },
+    {
+      "ticker": "SBUX",
+      "earnings_date": "2025-01-28",
+      "times_used": 5
+    },
+    {
+      "ticker": "STZ",
+      "earnings_date": "2025-01-10",
+      "times_used": 2
+    },
+    {
+      "ticker": "TTWO",
+      "earnings_date": "2021-11-03",
+      "times_used": 2
+    }
+  ]
+}
