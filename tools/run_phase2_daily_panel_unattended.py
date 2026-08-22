@@ -1,0 +1,403 @@
+#!/usr/bin/env python3
+"""Unattended Phase 2 daily-panel orchestrator — direct Python transport.
+
+Implements TRANSPORT_AMENDMENT_2026-08-22_DIRECT_PYTHON.md. Task Scheduler
+invokes the pinned Python interpreter with this file directly; no .ps1, .bat,
+.cmd, powershell.exe, pwsh.exe or shell wrapper is involved anywhere, and no
+subprocess is ever launched with shell=True.
+
+This replaces the retired PowerShell orchestration, which AVG quarantined three
+times under IDP.HELU.PSD11 — a behavioural heuristic targeting a PowerShell
+script that spawns a child process and invokes `git push`. No exclusion was
+added and no quarantined file was restored; the behaviour was moved out of the
+detected host instead.
+
+Scientific rules are unchanged: same panel program, same universe, same feature
+construction, same 02:05-02:25 America/Chicago window, same validator, same
+refusal rules, same no-backfill rule.
+
+Exit codes -- nothing is ever staged unless validation returns 0:
+
+     0  success, or preflight OK
+     3  repository / environment resolution failed
+     4  another run holds the lock
+     5  panel exceeded the outer timeout
+     6  a required output artifact is missing
+     7  schema validation failed
+     8  staging violation (unexpected changed path, or allowlist mismatch)
+     9  commit failed
+    10  refused: outside the local-time window
+    11  refused: a success or failure is already recorded for this date
+    12  refused: scheduled-task registration missing or its action does not
+        match the direct Python invocation
+    13  push failed -- the local commit and log are preserved and collection is
+        NOT repeated
+
+Usage:
+    python run_phase2_daily_panel_unattended.py --repo-root <path> [--mode run|preflight]
+"""
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import json
+import os
+import subprocess
+import sys
+import time
+from pathlib import Path
+from zoneinfo import ZoneInfo
+
+EXIT_OK = 0
+EXIT_ENV = 3
+EXIT_LOCK = 4
+EXIT_TIMEOUT = 5
+EXIT_MISSING = 6
+EXIT_SCHEMA = 7
+EXIT_STAGING = 8
+EXIT_COMMIT = 9
+EXIT_WINDOW = 10
+EXIT_DUPLICATE = 11
+EXIT_TASK = 12
+EXIT_PUSH = 13
+
+ZONE = "America/Chicago"
+WINDOW_OPEN = dt.time(2, 5)
+WINDOW_CLOSE = dt.time(2, 25)          # inclusive
+SCHEDULED = dt.time(2, 15)
+
+EXPECTED_BRANCH = "phase5-unattended-panel-recovery"
+EXPECTED_UPSTREAM = "origin/phase5-unattended-panel-recovery"
+TASK_NAME = "GST_PHASE2_DAILY_PANEL_UNATTENDED"
+
+STATE_DIR = Path(r"C:\Users\hakur\Downloads\gst-source-quarantine\scheduler")
+LOG_DIR = STATE_DIR / "logs"
+LOCK_DIR = STATE_DIR / "locks"
+ATTEMPT_DIR = STATE_DIR / "attempts"
+
+PANEL_SCRIPT = "GST_Phase2_DailyPanel.py"
+VALIDATOR = Path("tools") / "phase2_panel_validate.py"
+RUNNER_REL = Path("tools") / "run_phase2_daily_panel_unattended.py"
+
+PANEL_TIMEOUT_S = 3000
+
+# Shells and wrappers that must never appear in the task action.
+FORBIDDEN_IN_ACTION = ("powershell", "pwsh", "cmd.exe", ".ps1", ".bat", ".cmd", "wscript", "cscript")
+# Git subcommands the runner may never invoke.
+FORBIDDEN_GIT = ("pull", "checkout", "reset", "clean", "restore", "rebase", "merge", "fetch")
+
+
+class Refused(Exception):
+    def __init__(self, code: int, why: str):
+        super().__init__(why)
+        self.code = code
+        self.why = why
+
+
+# --------------------------------------------------------------------------- log
+
+class Log:
+    def __init__(self, path: Path):
+        self.path = path
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+    def __call__(self, msg: str) -> None:
+        line = f"[{dt.datetime.now(dt.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')}] {msg}"
+        print(line, flush=True)
+        with self.path.open("a", encoding="utf-8") as fh:
+            fh.write(line + "\n")
+
+
+# ------------------------------------------------------------------------ helpers
+
+def run(args: list[str], cwd: Path | None = None, timeout: int | None = None
+        ) -> subprocess.CompletedProcess:
+    """Always an argument array. shell=True is never used anywhere in this file."""
+    if args and args[0] == "git" and len(args) > 1:
+        sub = next((a for a in args[1:] if not a.startswith("-") and a != "-C"), None)
+        # -C <path> <subcommand>
+        if args[1] == "-C" and len(args) > 3:
+            sub = args[3]
+        if sub in FORBIDDEN_GIT:
+            raise Refused(EXIT_ENV, f"prohibited git subcommand refused: {sub}")
+    return subprocess.run(args, cwd=str(cwd) if cwd else None, capture_output=True,
+                          text=True, timeout=timeout, shell=False)
+
+
+def git(repo: Path, *args: str, timeout: int | None = 120) -> subprocess.CompletedProcess:
+    return run(["git", "-C", str(repo), *args], timeout=timeout)
+
+
+def local_now(now: dt.datetime | None = None) -> dt.datetime:
+    z = ZoneInfo(ZONE)
+    if now is None:
+        return dt.datetime.now(dt.timezone.utc).astimezone(z)
+    return (now.replace(tzinfo=z) if now.tzinfo is None else now.astimezone(z))
+
+
+def window_open(now_local: dt.datetime) -> tuple[bool, str]:
+    t = now_local.time().replace(microsecond=0)
+    if WINDOW_OPEN <= t <= WINDOW_CLOSE:
+        return True, "inside permitted window"
+    if t < WINDOW_OPEN:
+        return False, f"too early: {t} precedes {WINDOW_OPEN:%H:%M}"
+    return False, (f"too late: {t} follows {WINDOW_CLOSE:%H:%M} -- a missed cycle is skipped, "
+                   f"never backfilled")
+
+
+# ------------------------------------------------------------------- gate helpers
+
+def check_repo(repo_root: str, log: Log) -> Path:
+    p = Path(repo_root)
+    if not p.is_dir():
+        raise Refused(EXIT_ENV, f"repo root does not exist: {repo_root}")
+    r = run(["git", "-C", str(p), "rev-parse", "--show-toplevel"])
+    if r.returncode != 0 or not r.stdout.strip():
+        raise Refused(EXIT_ENV, f"git rev-parse --show-toplevel failed under {repo_root}")
+    top = Path(r.stdout.strip().splitlines()[0]).resolve()
+    if top != p.resolve():
+        raise Refused(EXIT_ENV, f"{p.resolve()} is not a repository toplevel (git says {top})")
+    log(f"repo toplevel verified: {top}")
+    return top
+
+
+def check_branch_head_clean(repo: Path, expected_sha: str | None, log: Log) -> str:
+    b = git(repo, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
+    if b != EXPECTED_BRANCH:
+        raise Refused(EXIT_ENV, f"branch is {b!r}, expected {EXPECTED_BRANCH!r}")
+    if not (repo / RUNNER_REL).is_file():
+        raise Refused(EXIT_ENV, f"committed runner missing from worktree: {RUNNER_REL}")
+    if not (repo / PANEL_SCRIPT).is_file():
+        raise Refused(EXIT_ENV, f"panel program missing: {PANEL_SCRIPT}")
+    if not (repo / VALIDATOR).is_file():
+        raise Refused(EXIT_ENV, f"validator missing: {VALIDATOR}")
+    dirty = git(repo, "status", "--porcelain").stdout.strip()
+    if dirty:
+        raise Refused(EXIT_ENV, f"worktree is not clean: {dirty.splitlines()[:3]}")
+    head = git(repo, "rev-parse", "HEAD").stdout.strip()
+    if expected_sha and head != expected_sha:
+        raise Refused(EXIT_ENV, f"HEAD {head[:12]} != pinned expected {expected_sha[:12]}")
+    up = git(repo, "rev-parse", "--abbrev-ref", "@{u}").stdout.strip()
+    if up != EXPECTED_UPSTREAM:
+        raise Refused(EXIT_ENV, f"upstream is {up!r}, expected {EXPECTED_UPSTREAM!r}")
+    log(f"branch={b} head={head[:12]} worktree=clean upstream={up}")
+    return head
+
+
+def attempt_path(run_date: str) -> Path:
+    return ATTEMPT_DIR / f"attempt_{run_date}.json"
+
+
+def check_no_prior_attempt(run_date: str, log: Log) -> None:
+    p = attempt_path(run_date)
+    if p.is_file():
+        try:
+            rec = json.loads(p.read_text(encoding="utf-8"))
+            outcome = rec.get("outcome", "unknown")
+        except Exception:                                           # noqa: BLE001
+            outcome = "unreadable"
+        raise Refused(EXIT_DUPLICATE,
+                      f"an attempt is already recorded for {run_date} (outcome={outcome}); "
+                      f"one network-bearing attempt per date, and a failure blocks retry too")
+    log(f"no prior attempt recorded for {run_date}")
+
+
+def record_attempt(run_date: str, outcome: str, detail: dict) -> None:
+    ATTEMPT_DIR.mkdir(parents=True, exist_ok=True)
+    rec = {"run_date": run_date, "outcome": outcome,
+           "recorded_utc": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+           **detail}
+    tmp = attempt_path(run_date).with_suffix(".tmp")
+    tmp.write_text(json.dumps(rec, indent=2), encoding="utf-8")
+    tmp.replace(attempt_path(run_date))
+
+
+def check_task_registration(log: Log, query=None) -> None:
+    """The task must exist and its action must be the direct Python invocation."""
+    if query is None:
+        query = _query_task_action
+    action = query()
+    if action is None:
+        raise Refused(EXIT_TASK, f"scheduled task {TASK_NAME} is not registered")
+    exe, args = action
+    blob = f"{exe} {args}".lower()
+    for bad in FORBIDDEN_IN_ACTION:
+        if bad in blob:
+            raise Refused(EXIT_TASK, f"task action contains a shell or wrapper ({bad!r}); "
+                                     f"direct Python invocation required")
+    if not exe.lower().endswith("python.exe"):
+        raise Refused(EXIT_TASK, f"task action executable is not python.exe: {exe}")
+    if RUNNER_REL.name not in args:
+        raise Refused(EXIT_TASK, f"task action does not invoke {RUNNER_REL.name}")
+    log(f"task registration verified: direct python invocation of {RUNNER_REL.name}")
+
+
+def _query_task_action():
+    """Read the registered action. Uses schtasks with an argument array, no shell."""
+    r = run(["schtasks", "/query", "/tn", TASK_NAME, "/xml", "ONE"], timeout=60)
+    if r.returncode != 0 or not r.stdout.strip():
+        return None
+    import re
+    x = r.stdout
+    m_exe = re.search(r"<Command>(.*?)</Command>", x, re.S)
+    m_arg = re.search(r"<Arguments>(.*?)</Arguments>", x, re.S)
+    if not m_exe:
+        return None
+    return m_exe.group(1).strip(), (m_arg.group(1).strip() if m_arg else "")
+
+
+# ------------------------------------------------------------------------- staging
+
+def staged_paths_ok(repo: Path, allow: list[str], log: Log) -> list[str]:
+    # -uall is required: plain --porcelain collapses a wholly-untracked directory
+    # to a single "dir/" entry, which would both hide the individual files and
+    # trip the allowlist on a path that is not a file.
+    changed = [l.strip() for l in
+               git(repo, "status", "--porcelain", "-uall").stdout.splitlines() if l.strip()]
+    paths = [c[3:].strip().strip('"').replace("\\", "/") for c in changed]
+    unexpected = [p for p in paths if p not in allow]
+    if unexpected:
+        raise Refused(EXIT_STAGING,
+                      f"unexpected changed path(s), refusing to stage: {unexpected[:5]}")
+    present = [a for a in allow if (repo / a).is_file()]
+    if len(present) != len(allow):
+        raise Refused(EXIT_STAGING,
+                      f"expected {len(allow)} output files, found {len(present)}")
+    log(f"staging allowlist satisfied: {len(present)} file(s), no unexpected paths")
+    return present
+
+
+# ---------------------------------------------------------------------------- main
+
+def main(argv=None) -> int:
+    ap = argparse.ArgumentParser(prog="run_phase2_daily_panel_unattended")
+    ap.add_argument("--repo-root", required=True)
+    ap.add_argument("--mode", choices=("run", "preflight"), default="run")
+    ap.add_argument("--expected-sha", default=None,
+                    help="pinned HEAD the runner requires; refuse if HEAD differs")
+    ap.add_argument("--now-override", default=None, help="TEST USE ONLY")
+    ap.add_argument("--skip-task-check", action="store_true",
+                    help="TEST USE ONLY; never set in the registered action")
+    a = ap.parse_args(argv)
+
+    stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    log = Log(LOG_DIR / f"phase2_unattended_{stamp}.log")
+    log(f"START mode={a.mode} transport=direct-python interpreter={sys.executable}")
+
+    now = None
+    if a.now_override:
+        now = dt.datetime.fromisoformat(a.now_override)
+        log("NOTE: clock supplied via --now-override (test path), not read from the host")
+    nl = local_now(now)
+    run_date = nl.date().isoformat()
+    log(f"local now={nl.isoformat()} zone={ZONE} run_date={run_date}")
+
+    try:
+        ok, why = window_open(nl)
+        log(f"window gate: {why}")
+        if not ok:
+            raise Refused(EXIT_WINDOW,
+                          "outside 02:05-02:25 America/Chicago; no network, git, staging, "
+                          "commit or push performed")
+
+        repo = check_repo(a.repo_root, log)
+        head = check_branch_head_clean(repo, a.expected_sha, log)
+        check_no_prior_attempt(run_date, log)
+        if not a.skip_task_check:
+            check_task_registration(log)
+
+        if a.mode == "preflight":
+            log("PREFLIGHT OK -- no network call made, panel not launched, nothing staged")
+            return EXIT_OK
+
+        LOCK_DIR.mkdir(parents=True, exist_ok=True)
+        lock = LOCK_DIR / "phase2_daily_panel.lock"
+        if lock.exists():
+            age = time.time() - lock.stat().st_mtime
+            if age < PANEL_TIMEOUT_S:
+                raise Refused(EXIT_LOCK, f"another run holds the lock (age {int(age)}s)")
+            log(f"stale lock ({int(age)}s); reclaiming")
+            lock.unlink()
+        lock.write_text(stamp, encoding="utf-8")
+
+        try:
+            csv_rel = f"Live Signal Engine/GST_Phase2_DailyPanel_TestRun_{run_date}_run3.csv"
+            marker_rel = (f"Live Signal Engine/GST_Phase2_DailyPanel_TestRun_"
+                          f"{run_date}_run3_COMPLETION_MARKER.json")
+
+            log("launching panel (single network-bearing attempt for this date)")
+            t0 = time.time()
+            try:
+                p = run([sys.executable, "-u", PANEL_SCRIPT], cwd=repo, timeout=PANEL_TIMEOUT_S)
+            except subprocess.TimeoutExpired:
+                record_attempt(run_date, "failure", {"stage": "panel", "reason": "timeout"})
+                raise Refused(EXIT_TIMEOUT, f"panel exceeded {PANEL_TIMEOUT_S}s; nothing committed")
+            elapsed = int(time.time() - t0)
+            log(f"panel exited code={p.returncode} elapsed={elapsed}s")
+
+            if not (repo / marker_rel).is_file() or not (repo / csv_rel).is_file():
+                record_attempt(run_date, "failure",
+                               {"stage": "output", "panel_exit": p.returncode})
+                raise Refused(EXIT_MISSING,
+                              "required output missing (final CSV is written only on a clean 24/24)")
+
+            v = run([sys.executable, str(repo / VALIDATOR),
+                     "--marker", str(repo / marker_rel), "--csv", str(repo / csv_rel)], cwd=repo)
+            for line in v.stdout.splitlines():
+                log(f"  {line}")
+            if v.returncode != 0:
+                record_attempt(run_date, "failure",
+                               {"stage": "validation", "validator_exit": v.returncode})
+                raise Refused(EXIT_SCHEMA if v.returncode == 7 else EXIT_MISSING,
+                              f"schema validation returned {v.returncode}; committing nothing")
+            log("schema validation PASSED")
+
+            allow = [csv_rel, marker_rel]
+            staged_paths_ok(repo, allow, log)
+            for rel in allow:
+                r = git(repo, "add", "--", rel)
+                if r.returncode != 0:
+                    record_attempt(run_date, "failure", {"stage": "stage", "path": rel})
+                    raise Refused(EXIT_STAGING, f"git add failed for {rel}")
+                log(f"  staged {rel}")
+
+            msg = (f"Unattended Phase 2 daily panel {run_date}: COMPLETE 24/24\n\n"
+                   f"Produced and committed by the scheduled direct-Python runner with no human in\n"
+                   f"the loop. Schema validation passed before anything was staged; a partial or\n"
+                   f"failed run commits nothing.\n\n"
+                   f"  run_date   {run_date}\n"
+                   f"  elapsed    {elapsed}s\n"
+                   f"  panel exit {p.returncode}\n"
+                   f"  runner     {head[:12]}\n\n"
+                   f"Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n")
+            c = git(repo, "commit", "-m", msg)
+            if c.returncode != 0:
+                record_attempt(run_date, "failure", {"stage": "commit"})
+                raise Refused(EXIT_COMMIT, f"git commit failed: {c.stderr.strip()[:200]}")
+            sha = git(repo, "rev-parse", "HEAD").stdout.strip()
+            log(f"COMMITTED {sha}")
+
+            pr = git(repo, "push", timeout=300)
+            if pr.returncode != 0:
+                record_attempt(run_date, "collected_commit_local_push_failed",
+                               {"stage": "push", "commit": sha})
+                log("PUSH FAILED -- local commit and log preserved; collection is NOT repeated")
+                return EXIT_PUSH
+            log(f"PUSHED {sha}")
+            record_attempt(run_date, "success", {"commit": sha, "elapsed_s": elapsed})
+            log("DONE unattended cycle OK")
+            return EXIT_OK
+        finally:
+            if lock.exists():
+                lock.unlink()
+
+    except Refused as e:
+        log(f"REFUSED({e.code}): {e.why}")
+        return e.code
+    except Exception as e:                                          # noqa: BLE001
+        log(f"ABORT: unexpected {type(e).__name__}: {e}")
+        return EXIT_ENV
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
