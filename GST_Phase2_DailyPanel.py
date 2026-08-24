@@ -193,6 +193,7 @@ import os
 import random
 import sys
 import threading
+import io
 import time
 import traceback
 import pandas as pd
@@ -220,8 +221,49 @@ import GST_Phase2_Wikipedia_Transport as wiki_transport
 from GST_MultiTicker_Forward_Log import get_option_snapshot, get_nearest_post_earnings_expiry
 
 
+# --- RUN LOG PERSISTENCE (2026-08-23, from the 8/23 PARTIAL incident) ---
+# The panel logs every stage in detail, but only ever to stdout. The unattended
+# runner captures that stdout into a subprocess pipe and then discards it: on a
+# failure path it records the exit code and elapsed seconds and nothing else
+# (only the VALIDATOR's stdout is echoed into the runner log). So when the 8/23
+# run finished PARTIAL, the per-leg timers in the checkpoint summed to 393.3s of
+# a 2700.5s run and the remaining ~2300s could not be attributed to any stage --
+# the only record that would have shown it had already been thrown away.
+#
+# This tees log() to a file next to the checkpoint so the next failure is
+# diagnosable from artifacts alone. Best-effort by construction: any filesystem
+# problem here must never take down a run that is otherwise fine, so the sink is
+# opened once, guarded, and silently dropped if it cannot be established.
+#
+# The name matches the gitignore entry for this pattern. That is REQUIRED, not
+# cosmetic: check_branch_head_clean() refuses on any dirty path including
+# untracked ones, and staged_paths_ok() refuses on any changed path outside its
+# allowlist, so an un-ignored log file here would refuse the NEXT unattended run
+# and break the staging gate of this one.
+_RUN_LOG_FH = None
+
+
+def _open_run_log() -> None:
+    """Best-effort. A failure to open the sink is not a run-affecting error."""
+    global _RUN_LOG_FH
+    if _RUN_LOG_FH is not None:
+        return
+    try:
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        path = OUT_DIR / f"GST_Phase2_DailyPanel_RunLog_{stamp}.log"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        _RUN_LOG_FH = io.open(path, "a", encoding="utf-8", buffering=1)
+    except Exception:                                               # noqa: BLE001
+        _RUN_LOG_FH = None
+
+
 def log(msg: str) -> None:
     print(msg, flush=True)
+    if _RUN_LOG_FH is not None:
+        try:
+            _RUN_LOG_FH.write(f"[{datetime.now(timezone.utc).isoformat()}] {msg}\n")
+        except Exception:                                           # noqa: BLE001
+            pass
 
 
 # Confirmed 24-ticker Phase 2 universe, spec Section 2 (2026-07-26 feasibility decision).
@@ -309,6 +351,50 @@ PER_TICKER_WALL_BUDGET_S = 900.0
 # preserved, the active ticker is recorded, and the process exits nonzero
 # without restarting.
 TOTAL_RUN_BUDGET_S = 45 * 60.0
+
+# --- WIKIPEDIA RECOVERY RESERVE (2026-08-23, from the 8/23 PARTIAL incident) ---
+# WIKI_RECOVERY_RESERVE_S: wall-clock reserved OFF THE TOP of TOTAL_RUN_BUDGET_S
+# for the post-loop Wikipedia recovery stages (bounded second pass, recent-cache
+# fallback, bounded closed-month subchunk recovery).
+#
+# Why this exists. Before this change all three recovery stages were funded from
+# whatever happened to be LEFT OVER after the ticker loop:
+#     remaining_budget = max(0.0, TOTAL_RUN_BUDGET_S - (time.time() - wall_start))
+# That is a leftover, not a budget, and it is legally allowed to be zero. On the
+# 2026-08-23 unattended run it WAS zero: 46 queued chunks across 7 tickers
+# (QCOM 6, SBUX 2, STZ 8, SYK 10, TSLA 8, TTWO 2, UAL 10), and 45 of the 46 came
+# back "second_pass_budget_exhausted" -- the branch taken at the TOP of
+# run_bounded_second_pass()'s loop, before any wait and before any request. One
+# more came back "second_pass_budget_exhausted_after_wait". Zero requests were
+# issued. run_bounded_subchunk_recovery() then never ran at all
+# (wiki_subchunk_recovery_attempted == False on all 7 rows). The panel finished
+# PARTIAL at 17/24 clean, wiki_zscore 70.83% while every other field was 100%,
+# so the runner committed nothing.
+#
+# The reserve makes the recovery stages first-class rather than residual: the
+# ticker loop is now deadlined at TOTAL_RUN_BUDGET_S - WIKI_RECOVERY_RESERVE_S,
+# so the recovery stages can never be entered at zero however the loop went.
+#
+# Sizing, from the 8/23 run's own measurements rather than a guess. Summing the
+# per-leg timers recorded in that run's checkpoint: wiki first pass 350.6s,
+# earnings 17.5s, GST 16.0s, IV 5.6s, price history 3.6s, realized vol 0.1s =
+# 393.3s of measured work, and the per-ticker retrieval timestamps put the whole
+# 24-ticker loop at roughly 590s wall (the difference being BETWEEN_TICKERS
+# jitter and the four MICRO_BATCH_PAUSE_S pauses). Leaving 1200s for the loop is
+# about double its observed need. That frees 1500s for recovery, which at the
+# ~38s worst case per chunk (SECOND_PASS_JITTER_RANGE_S upper bound plus a full
+# CHUNK_TIMEOUT_S) covers ~39 of the 46 chunks that were queued on 8/23.
+#
+# NOTE the hard ceiling this sits under: the unattended runner kills the panel at
+# PANEL_TIMEOUT_S = 3000s (tools/run_phase2_daily_panel_unattended.py). Raising
+# TOTAL_RUN_BUDGET_S to buy recovery time is therefore NOT available -- there is
+# only 300s of headroom above the current 2700s and the marker must still be
+# written inside it. Reallocating within the existing 2700s is the only fix that
+# stays panel-scoped, which is what this does.
+WIKI_RECOVERY_RESERVE_S = 1500.0
+# The deadline the ticker loop runs against; the recovery stages get the rest.
+# Derived so the two can never drift apart.
+TICKER_LOOP_BUDGET_S = TOTAL_RUN_BUDGET_S - WIKI_RECOVERY_RESERVE_S
 
 # --- SAFEGUARD TEST HOOK (2026-07-30) -- deliberately mocked/injected slow
 # call, used ONLY to prove run_bounded()/budgets/checkpointing actually work
@@ -1253,6 +1339,9 @@ def is_run_complete(rows: list[dict], exit_status: str, expected_tickers: list[s
 
 
 def main():
+    # Establish the persistent run-log sink first, so every line below is
+    # captured on disk and not only in a stdout pipe the caller may discard.
+    _open_run_log()
     run_ts = datetime.now(timezone.utc)
     log("*** GST PHASE 2 -- DAILY INFORMATION ARRIVAL PANEL (MANUAL TEST RUN 3) ***")
     log(f"Run timestamp (UTC): {run_ts.isoformat()}")
@@ -1260,6 +1349,7 @@ def main():
     log(f"Budgets: GST={GST_TICKER_BUDGET_S:.0f}s/ticker  "
         f"wiki-chunk={wiki_transport.CHUNK_TIMEOUT_S:.0f}s (process-isolated, calendar-chunked, cached)  "
         f"yfinance-call={YF_CALL_TIMEOUT_S:.0f}s  per-ticker={PER_TICKER_WALL_BUDGET_S:.0f}s  "
+        f"ticker-loop={TICKER_LOOP_BUDGET_S:.0f}s  wiki-recovery-reserve={WIKI_RECOVERY_RESERVE_S:.0f}s  "
         f"total-run={TOTAL_RUN_BUDGET_S:.0f}s\n")
     log("NOTE (scope disclosure): only the Wikipedia leg uses genuinely killable "
         "subprocess isolation this pass. GST/earnings/price_history/iv legs still use "
@@ -1373,8 +1463,16 @@ def main():
 
     for i, ticker in enumerate(TICKERS, start=1):
         elapsed_so_far = time.time() - wall_start
-        if elapsed_so_far >= TOTAL_RUN_BUDGET_S:
-            log(f"\n*** TOTAL RUN BUDGET ({TOTAL_RUN_BUDGET_S:.0f}s) EXHAUSTED before starting "
+        # The loop stops at TICKER_LOOP_BUDGET_S, not TOTAL_RUN_BUDGET_S, so the
+        # Wikipedia recovery stages below always inherit WIKI_RECOVERY_RESERVE_S of
+        # usable wall clock instead of whatever happens to be left over (which was
+        # zero on 2026-08-23). Stopping the loop early is the intended trade: a
+        # ticker missed here is queued and recoverable, whereas a recovery stage
+        # entered at zero budget cannot issue even one request.
+        if elapsed_so_far >= TICKER_LOOP_BUDGET_S:
+            log(f"\n*** TICKER LOOP BUDGET ({TICKER_LOOP_BUDGET_S:.0f}s of the "
+                f"{TOTAL_RUN_BUDGET_S:.0f}s total; {WIKI_RECOVERY_RESERVE_S:.0f}s reserved for "
+                f"Wikipedia recovery) EXHAUSTED before starting "
                 f"ticker {i}/{len(TICKERS)} ({ticker}). Stopping -- not restarting. ***")
             exit_status = "PARTIAL"
             active_ticker = ticker
@@ -1388,7 +1486,7 @@ def main():
         # cannot materially eat into the deadline meant for the tickers
         # after it -- not just an unconditional per-chunk timeout regardless
         # of how much run time is left.
-        wiki_remaining_budget_s = max(0.0, TOTAL_RUN_BUDGET_S - (time.time() - wall_start))
+        wiki_remaining_budget_s = max(0.0, TICKER_LOOP_BUDGET_S - (time.time() - wall_start))
         try:
             row, wiki_pending = process_ticker(pt, ticker, run_ts,
                                                 wiki_remaining_budget_s=wiki_remaining_budget_s,
@@ -1434,10 +1532,26 @@ def main():
     # preserved in `rows` (as "pending_second_pass") and every other ticker
     # already ran to completion regardless. ---
     if wiki_pending_by_ticker and wiki_leg_enabled:
+        # Completability ordering (2026-08-23). run_bounded_second_pass() walks this
+        # queue strictly in order and gives each chunk one attempt, so whatever sits
+        # at the front is what gets funded when the budget binds. A ticker's
+        # wiki_zscore needs ALL of its chunks, so spending the budget in whatever
+        # order dict iteration happens to produce maximises partial progress and can
+        # complete nobody. Ordering by ascending chunk count spends the same budget
+        # on the tickers closest to whole first, maximising how many actually reach a
+        # computable z-score. On the 8/23 queue that is SBUX(2), TTWO(2), QCOM(6),
+        # STZ(8), TSLA(8), SYK(10), UAL(10). Ticker name breaks ties so the order is
+        # deterministic run to run.
         combined_queue = []
-        for pending in wiki_pending_by_ticker.values():
+        for _tkr, pending in sorted(wiki_pending_by_ticker.items(),
+                                     key=lambda kv: (len(kv[1]["failed_chunks"]), kv[0])):
             combined_queue.extend(pending["failed_chunks"])
-        remaining_budget = max(0.0, TOTAL_RUN_BUDGET_S - (time.time() - wall_start))
+        # Funded from the reserve, with a floor so this stage can never be entered at
+        # zero: whatever the loop did, recovery gets as much of
+        # WIKI_RECOVERY_RESERVE_S as the total-run budget can still honour.
+        _elapsed_now = time.time() - wall_start
+        remaining_budget = max(0.0, min(WIKI_RECOVERY_RESERVE_S,
+                                         TOTAL_RUN_BUDGET_S - _elapsed_now))
         log(f"\n*** WIKIPEDIA SECOND PASS: {len(combined_queue)} failed chunk(s) across "
             f"{len(wiki_pending_by_ticker)} ticker(s), remaining run budget {remaining_budget:.0f}s ***")
         second = wiki_transport.run_bounded_second_pass(combined_queue, remaining_budget_s=remaining_budget,
@@ -1485,7 +1599,10 @@ def main():
         # chunk, successfully or not); see
         # GST_Phase2_Wikipedia_Transport.run_bounded_subchunk_recovery()
         # for the full bounded, non-recursive, fail-closed contract. ---
-        subchunk_remaining_budget = max(0.0, TOTAL_RUN_BUDGET_S - (time.time() - wall_start))
+        # Same reserve discipline as the second pass: bounded by what the total-run
+        # budget can still honour, never by a leftover that may be zero.
+        subchunk_remaining_budget = max(0.0, min(WIKI_RECOVERY_RESERVE_S,
+                                                  TOTAL_RUN_BUDGET_S - (time.time() - wall_start)))
         subchunk = wiki_transport.run_bounded_subchunk_recovery(
             fallback["still_failed"], remaining_budget_s=subchunk_remaining_budget,
             watermark=binding_watermark)
