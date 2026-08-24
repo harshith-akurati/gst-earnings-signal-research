@@ -11,3 +11,18 @@ __pycache__/
 # Raw SEC HTTP response cache for the semiconductor EPS work. Provider bodies only --
 # never project content, and previously swept into a commit by accident.
 Live Signal Engine/Semiconductor_EPS_Absorption/_cache/
+
+# Wikipedia pageview chunk cache for the Phase 2 daily panel. A local transport
+# cache the panel rewrites on every run -- provider response bodies, not project
+# content. It is also a clean-gate hazard: check_branch_head_clean() in
+# tools/run_phase2_daily_panel_unattended.py refuses on ANY dirty path including
+# untracked ones, so leaving this file untracked would refuse the next
+# unattended run before it made a single network call.
+Live Signal Engine/Phase2_Wikipedia_Cache.csv
+
+# Per-run panel log written by GST_Phase2_DailyPanel.log(). Diagnostic transcript
+# of a single run, not project content. MUST stay ignored: the unattended runner's
+# check_branch_head_clean() refuses on any dirty path (untracked included) and
+# staged_paths_ok() refuses on any changed path outside its allowlist, so an
+# un-ignored log here would refuse the next run and break this run's staging gate.
+Live Signal Engine/GST_Phase2_DailyPanel_RunLog_*.log
