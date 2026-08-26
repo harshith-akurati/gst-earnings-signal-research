@@ -114,10 +114,15 @@ class Fixture:
         R.LOCK_DIR = R.STATE_DIR / "locks"
         R.ATTEMPT_DIR = R.STATE_DIR / "attempts"
 
-    def call(self, now=IN_WINDOW, mode="run", sha=None, task=GOOD_TASK, skip_task=False):
+    def call(self, now=IN_WINDOW, mode="run", sha=None, task=GOOD_TASK, skip_task=False,
+             runner_sha256=None, approved=None):
         argv = ["--repo-root", str(self.repo), "--mode", mode, "--now-override", now]
         if sha:
             argv += ["--expected-sha", sha]
+        if runner_sha256:
+            argv += ["--runner-sha256", runner_sha256]
+        if approved:
+            argv += ["--approved-commit", approved]
         if skip_task:
             argv += ["--skip-task-check"]
         real = R._query_task_action
@@ -226,9 +231,25 @@ finally:
     f.close()
 f = Fixture()
 try:
+    # 2026-08-25: the old HEAD-equality pin is GONE. --expected-sha is parsed but
+    # ignored, precisely so a stale registration cannot silently keep working AND
+    # cannot crash on an unknown argument. A wrong value must now be harmless.
     rc = f.call(mode="preflight", sha="0" * 40)
-    check("5d. HEAD != pinned expected SHA refuses", rc == R.EXIT_ENV, str(rc))
-    check("5e. refusal names the pin mismatch", "pinned expected" in f.log_text())
+    check("5d. deprecated --expected-sha is ignored, not enforced", rc == R.EXIT_OK, str(rc))
+    check("5e. the log says it is deprecated and ignored",
+          "deprecated and ignored" in f.log_text())
+    # the replacement: a wrong runner hash refuses with EXIT_INTEGRITY
+    rc = f.call(mode="preflight", runner_sha256="0" * 64)
+    check("5k. wrong runner hash refuses with EXIT_INTEGRITY", rc == R.EXIT_INTEGRITY, str(rc))
+    check("5l. refusal names the hash mismatch", "runner hash" in f.log_text())
+    # and a HEAD that does not descend from the approved commit refuses
+    rc = f.call(mode="preflight", approved="0" * 40)
+    check("5m. non-descendant HEAD refuses with EXIT_INTEGRITY", rc == R.EXIT_INTEGRITY, str(rc))
+    check("5n. refusal names the lineage failure", "not a descendant" in f.log_text())
+    # the good path: real hash + real ancestor commit both pass
+    good = R.runner_file_sha256(f.repo)
+    rc = f.call(mode="preflight", runner_sha256=good, approved=f.head)
+    check("5o. correct hash and ancestry pass preflight", rc == R.EXIT_OK, str(rc))
 finally:
     f.close()
 f = Fixture()
