@@ -1,0 +1,28 @@
+# Phase 2 daily panel outputs are EVIDENCE. They must be stored byte-for-byte.
+#
+# This repository runs with core.autocrlf=true, which normalises CRLF to LF when
+# a file is staged and converts back on checkout. For source that is harmless.
+# For a captured panel it is not: the committed blob would not be the bytes the
+# panel actually wrote, so a SHA-256 taken of the capture at collection time
+# would not match the SHA-256 of what the repository stores, and neither would
+# match what a fresh clone checks out. That breaks the only property these files
+# exist to have -- being the unaltered record of a scheduled capture.
+#
+# -text disables all end-of-line conversion in both directions for these paths.
+# It does not mark them unreadable or undiffable; it only stops git rewriting
+# their bytes. Applied to the panel's three output shapes and to the completion
+# marker, which is hashed alongside them.
+#
+# Discovered 2026-08-25 while recovering the 2026-08-24 capture: staging the
+# artifacts produced blobs whose SHA-256 differed from the files on disk. The
+# 2026-08-23 checkpoint committed in aa4e297 was normalised the same way, before
+# this rule existed; it is left as committed rather than rewritten, since
+# rewriting history to change stored evidence is worse than recording that the
+# earlier file was normalised.
+# NOTE: gitattributes patterns are whitespace-separated, so a pattern containing
+# the directory "Live Signal Engine" cannot be written literally -- git parses the
+# text after the space as an attribute name and rejects the line. These filename
+# patterns are globally unique to the panel, so matching them at any depth is both
+# correct and unambiguous.
+GST_Phase2_DailyPanel_TestRun_*.csv    -text
+GST_Phase2_DailyPanel_TestRun_*.json   -text
