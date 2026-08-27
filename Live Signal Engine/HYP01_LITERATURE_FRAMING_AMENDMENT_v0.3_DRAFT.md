@@ -1,6 +1,6 @@
 # HYP-01 Literature-Framing Amendment — v0.3 DRAFT
 
-**Date drafted:** 2026-08-26 · **Status:** DRAFT, **uncommitted**, for co-author review.
+**Date drafted:** 2026-08-26 · **Status:** DRAFT, committed on a review branch; not approved, registered, or final.
 **Type:** **FRAMING ONLY.** This document adds published-literature context to the justification
 narrative around HYP-01. It makes **no new hypothesis and no new scientific-design decision.**
 
@@ -214,10 +214,13 @@ ten artifacts consulted, with SHA-256 values as checked out on base
 ## 8. Version note
 
 This is labelled **v0.3** per the co-author's instruction. **No v0.1 or v0.2 of this document exists in
-any committed branch of this repository, nor as an uncommitted file on disk** — verified by searching
-every ref for filenames matching `LITERATURE.?FRAMING`, `EFFECT.?SIZE.?COMPARABILITY`, `A9_MEMO`, and
-by a filesystem search across all worktrees. A redline against v0.2 therefore cannot be produced from
-committed evidence. If a v0.2 exists outside this repository, it should be supplied so a genuine
+any committed ref of this repository** — verified by searching every ref for filenames matching
+`LITERATURE.?FRAMING`, `EFFECT.?SIZE.?COMPARABILITY` and `A9_MEMO`. A filesystem search across the
+worktrees at the time of drafting also found none, but that is a **point-in-time observation about one
+machine**, not a durable fact: this document cannot claim permanent knowledge of every local disk
+state, and a predecessor may exist outside this repository. The repository-verifiable claim is the
+narrower one, and it is the one relied on here. A redline against v0.2 therefore cannot be produced
+from committed evidence. If a v0.2 exists outside this repository, it should be supplied so a genuine
 redline can replace §9.
 
 ## 9. INSTRUCTION-DERIVED CHANGE SUMMARY

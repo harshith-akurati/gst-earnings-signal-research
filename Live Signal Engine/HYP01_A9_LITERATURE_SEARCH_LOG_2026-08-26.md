@@ -1,6 +1,6 @@
 # Bounded literature search — external effect-size anchor for A9
 
-**Date searched:** 2026-08-26 · **Status:** DRAFT, uncommitted · **Scope:** one bounded pass, closed
+**Date searched:** 2026-08-26 · **Status:** DRAFT, committed on a review branch; not approved, registered, or final. · **Scope:** one bounded pass, closed
 at the end of this document. Not left open.
 
 ## Purpose

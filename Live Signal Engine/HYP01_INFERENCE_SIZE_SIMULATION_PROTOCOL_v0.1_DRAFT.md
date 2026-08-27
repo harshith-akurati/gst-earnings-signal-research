@@ -11,13 +11,22 @@ America/Chicago); filed under the co-author's 2026-08-27 review-cycle label.
 
 ## 1. Purpose
 
-To establish, by synthetic simulation under a **true null**, the **empirical size** of the locked
-HYP-01 inference procedure at the cluster counts and balance patterns the realised design may present.
+To estimate, by synthetic simulation under a **true null**, the **rejection rate of the locked
+HYP-01 inference procedure under specifically declared synthetic data-generating processes**, across
+the cluster counts and balance patterns the realised design may present.
 
-This is needed because a power figure computed against a nominal reference distribution is only an
-**upper bound** on true power when empirical size is inflated. Without a reproducible size estimate,
-`A9_EFFECT_SIZE_COMPARABILITY_MEMO_v0.3_DRAFT.md` §6 permits only option (b) — a qualitative
-upper-bound label. This protocol is the route to option (a), size-adjusted power.
+**What this study is not.** It is **not** a measurement of "the project's empirical size" — no such
+quantity is established by a synthetic DGP, and no figure produced here may be described that way.
+Every number it yields is a *rejection rate under a named synthetic DGP*, and its transportability to
+the realised design is exactly as good as the DGP's realism, which is an assumption and not a result.
+
+**It does not by itself produce size-adjusted power.** Per
+`A9_EFFECT_SIZE_COMPARABILITY_MEMO_v0.3_DRAFT.md` §6, size-adjusted power additionally requires a
+registered SESOI or labelled hypothetical alternative, a predeclared calibration rule deriving a 5%
+cutoff from these null results, **separate alternative-DGP simulations** run at that cutoff, matched
+scenarios, and Monte Carlo uncertainty on the power estimate itself. This protocol covers the **null
+half only** — one input among five. Alternative-DGP runs are **out of scope** and would need their
+own protocol and their own authorization.
 
 **This protocol does not perform A9 and does not require a SESOI.** Size is a property of the test
 under the null; it is independent of any effect size. A9 remains separately blocked
@@ -105,32 +114,43 @@ added, dropped, or reweighted after results are seen** (§13).
 Each cluster-count scenario is run under **two** cluster-size patterns:
 
 - **Balanced** — cluster sizes as equal as `n = 60` permits.
-- **Unbalanced** — a declared skew. The exact allocation rule must be fixed in the script before
-  execution and recorded in the output schema. The gap audit notes the cohort is expected to be
-  unbalanced, so this arm is the one of primary interest.
+- **Unbalanced** — a skew that must be written out **as an explicit integer allocation for every G**
+  before approval.
+
+> **LOOPHOLE CLOSED.** An earlier draft said the allocation "must be fixed in the script before
+> execution". That let the *script* decide the study after the *protocol* was approved. **The exact
+> allocation vectors for every G, balanced and unbalanced, must appear in this document and be
+> approved as written** (see §16.1). "Declared in the script" is no longer sufficient anywhere in
+> this protocol.
+
+The gap audit notes the cohort is expected to be unbalanced, so that arm is of primary interest.
 
 ### 7.2 DGP assumptions — declared in advance
 
-| Component | Specification |
+| Component | What must be fixed **in this document** before approval |
 |---|---|
-| Regressor | One continuous covariate, drawn i.i.d. standard normal, standing in structurally for `gst_zscore`. **Not** calibrated to any observed distribution |
-| True coefficient | **β = 0 exactly** — this is a **true-null** study. Size only |
-| Cluster effect | Additive cluster-level random intercept, variance declared in the script |
-| Idiosyncratic error | Declared in the script |
-| Outcome transform | The protocol must state explicitly whether the simulated outcome is left on the raw scale or transformed to respect the non-negativity of `abs_overnight_gap`. **This choice must be made and justified before execution**, and both arms may be run only if both are declared in advance |
+| Regressor construction | Exact distribution and whether the regressor is i.i.d. across observations or **clustered** (correlated within cluster). These behave differently under CR2, so the choice is substantive, not cosmetic |
+| Clustered-regressor / high-leverage stress arm | Explicit **yes or no**, and if yes, the exact construction. Small-G CR2 behaviour is sensitive to leverage, so omitting this arm is a decision that must be taken deliberately rather than by silence |
+| True coefficient | **β = 0 exactly** — true-null study |
+| Cluster-intercept variance | Exact numeric value |
+| Idiosyncratic-error variance | Exact numeric value |
+| Heteroskedasticity rule (E2) | The exact generating rule mapping cluster index to error variance |
+| Heavy-tail family and df (E3) | Named distribution **and** its degrees-of-freedom parameter |
+| Outcome construction / transformation | Exact statement of whether the simulated outcome is left on the raw scale or transformed to respect the non-negativity of `abs_overnight_gap`, with the transformation written out if used |
 
-> **Open item for co-author decision.** The outcome-transform question in the last row is a
-> substantive modelling choice with a bearing on realism. It is **deliberately not decided here**, and
-> approving this protocol requires deciding it.
+> **Every cell above is currently UNSPECIFIED and must be filled in before §16 can be signed.** None
+> of them may be deferred to the script. A protocol whose parameters are chosen after approval is not
+> a preregistration.
 
 ### 7.3 Error structures
 
 Declared in advance, each a separate labelled arm; results reported per arm, never pooled:
 
-- **E1 — homoskedastic** normal errors (baseline).
-- **E2 — cluster-heteroskedastic**: error variance varying by cluster.
-- **E3 — heavy-tailed**: a declared heavier-tailed family, to probe robustness of the Satterthwaite
-  approximation.
+- **E1 — homoskedastic** normal errors (baseline). Variance to be specified per §7.2.
+- **E2 — cluster-heteroskedastic**: error variance varying by cluster, by the **exact rule** required
+  in §7.2 — not "some skew".
+- **E3 — heavy-tailed**: a **named** family with a **stated df**, per §7.2, to probe robustness of
+  the Satterthwaite approximation.
 
 ## 8. Replications and justification
 
@@ -145,11 +165,25 @@ after any result is seen.
 
 ## 9. Deterministic seeds
 
-- A single **master seed**, declared in the committed script.
-- Per-cell seeds derived deterministically from the master seed and the cell's identifying tuple
-  (scenario, balance, error structure, replication index), so any single replication can be
-  regenerated in isolation.
-- The master seed, the derivation rule, and the RNG algorithm are recorded in the output schema.
+- A single **master seed**, an exact integer, fixed **in this document** before approval.
+- A **named RNG algorithm** (e.g. PCG64), fixed in this document — not left to a library default,
+  which can change between versions.
+- A **deterministic seed-derivation rule** from `(master_seed, scenario, balance, error_structure,
+  replication_index)`, written out explicitly enough that a third party can regenerate the seed of any
+  single replication from the document alone.
+
+> **SCHEMA CONSISTENCY.** The seed tuple includes `replication_index`, so seeds exist **per
+> replication**, but the §15.1 output schema is one row **per cell**. A per-cell row cannot carry a
+> per-replication seed. The protocol therefore requires **one** of the following, chosen before
+> approval:
+>
+> - **(i)** record the derivation rule in full at cell level, sufficient to regenerate every
+>   replication seed deterministically — the rule, not the seeds; **or**
+> - **(ii)** emit a separate **replication-level seed record** alongside the cell-level results.
+>
+> Recording a single `cell_seed` while seeding per replication is internally inconsistent and would
+> not permit regeneration. That inconsistency existed in the previous draft and is corrected here.
+
 - **Seeds are fixed before execution and never re-drawn.** A re-run with a new seed is a *new study*
   requiring its own record, not a replacement of the first.
 
@@ -160,8 +194,8 @@ after any result is seen.
 | **M1** | CR2 + coefficient-specific Satterthwaite | **The locked procedure — the object of the study** |
 | M2 | CR2 + t(G−1) | Comparator: isolates the reference-distribution choice |
 | M3 | CR1 + t(G−1) | Comparator: the "reported reference number" method |
-| M4 | CV0 + normal | Comparator: known-bad lower bound |
-| M5 | Wild cluster bootstrap | **Optional, non-binding.** Only if `fwildclusterboot` (or equivalent) is installed and pinned. Currently deliberately not installed, and D4 gives it no HYP-01 role |
+| M4 | CV0 + normal | Comparator: an uncorrected **benchmark**. Expected to reject most often, but **no ordering among methods is guaranteed** — M4 is not a floor, a bound, or a guaranteed worst case, and any such claim must be read off the results rather than assumed |
+| M5 | Wild cluster bootstrap | **Non-binding.** Inclusion or exclusion must be decided **explicitly before approval** (§16.1) rather than left to whether a package happens to be installed. Currently `fwildclusterboot` is deliberately not installed, and D4 gives the bootstrap no HYP-01 role |
 
 **No comparator result may be used to change the locked procedure.** Changing it requires a new dated
 amendment authored without outcome inspection, per `D10/future_threshold_rule`.
@@ -181,10 +215,18 @@ exist.
 
 ## 12. Monte Carlo uncertainty
 
-Every reported rate must carry a **95% Monte Carlo interval** (Wilson or Clopper–Pearson; the choice
-declared in the script before execution). A rate reported without its interval is not a valid output
-of this protocol. Differences between methods must be assessed against these intervals and not by
-point-estimate ordering.
+Every reported rate must carry a **95% Monte Carlo interval**. The interval method — Wilson or
+Clopper–Pearson — must be **named in this document before approval**, not chosen in the script. A rate
+reported without its interval is not a valid output of this protocol.
+
+> **PAIRED, NOT MARGINAL.** All methods are evaluated on the **same synthetic replications**, so their
+> rejection indicators are **paired**. Comparing two methods by checking whether their marginal
+> confidence intervals overlap is **invalid** — it ignores the pairing and is systematically
+> conservative. Any method-difference inference must use **paired rejection indicators** (e.g.
+> McNemar-style discordant-pair analysis on the per-replication indicator vectors) or a **paired
+> Monte Carlo standard error** for the difference. Overlapping marginal intervals are not evidence of
+> no difference, and non-overlapping ones are not the test. The previous draft's instruction to assess
+> differences "against these intervals" was wrong and is corrected here.
 
 ## 13. No tuning after results
 
@@ -195,11 +237,13 @@ output, and it may not be used to support a size adjustment.
 
 ## 14. Software, environment, and script requirements
 
-- **Language and packages pinned** to the environment already locked for HYP-01 in
-  `/authoritative_calculation`: R 4.6.1, `clubSandwich` 0.7.0, `sandwich` 3.1-3, and the remaining
-  pinned versions recorded there.
-- The **script is committed to the repository before execution** — path, content hash, and commit SHA
-  recorded in the output.
+- **Every package version stated exactly in this document before approval** — not "as locked
+  elsewhere". The starting point is the HYP-01 environment in `/authoritative_calculation` (R 4.6.1,
+  `clubSandwich` 0.7.0, `sandwich` 3.1-3, and the remaining pinned versions recorded there), but the
+  full list, including anything the simulation harness itself pulls in, must be enumerated here.
+- **The executable script must be committed and reviewed BEFORE execution is authorized**, and its
+  **repository path and SHA-256 recorded in this document**. Approving a protocol whose script does
+  not yet exist authorizes an unreviewed program; §16 cannot be signed until the script is in hand.
 - A **machine-readable environment manifest** (package versions, OS, architecture, RNG) is emitted
   with the results.
 - **Nothing is deleted after use.** The failure mode this protocol exists to prevent is precisely the
@@ -216,7 +260,8 @@ scenario_id, G, n, balance_pattern, error_structure, method_label,
 replications_completed, replications_failed,
 empirical_size, mc_ci_lower, mc_ci_upper, size_distortion,
 nu_mean, nu_sd, nu_p05, g_star_mean,
-master_seed, cell_seed, rng_algorithm,
+master_seed, seed_derivation_rule, rng_algorithm,
+(plus a replication-level seed record if §9 option (ii) was chosen),
 script_commit_sha, script_sha256, environment_manifest_sha256,
 run_started_utc, run_ended_utc, protocol_version
 ```
@@ -226,11 +271,28 @@ Plus a run-level record: protocol version, approval reference, and an explicit
 
 ### 15.2 Failure handling
 
-- A replication that fails to converge, produces a non-finite statistic, or trips a refusal threshold
-  from `/refusal_thresholds` is **recorded as a failure**, counted in `replications_failed`, and
-  **excluded from the rate** — never silently retried and never replaced by a fresh draw.
-- If `replications_failed / R` exceeds **1%** in any cell, that cell's empirical size is reported as
-  **`UNRELIABLE`** with the failure fraction, and is not used for size adjustment.
+A replication that fails to converge, produces a non-finite statistic, or trips a refusal threshold
+from `/refusal_thresholds` is **recorded as a failure** — never silently retried, never replaced by a
+fresh draw.
+
+> **FAILURES ARE NOT SIMPLY DROPPED.** Excluding failures from the denominator silently assumes they
+> would have behaved like the successes, which is exactly what cannot be assumed when the failure is
+> a degenerate fit at small G. The previous draft did this and is corrected here.
+
+Every cell must report **all four** of the following, and the bounds are the primary figures:
+
+| Quantity | Definition |
+|---|---|
+| `failure_fraction` | `failures / R` |
+| `rejection_lower_bound` | `rejections / R` — every failure counted as a non-rejection |
+| `rejection_upper_bound` | `(rejections + failures) / R` — every failure counted as a rejection |
+| `rejection_conditional` | `rejections / (R − failures)` — **clearly labelled as conditional on the replication succeeding**, and never reported alone |
+
+**A cell whose bounds are wide enough to change the substantive classification cannot support
+calibration.** Concretely: if `rejection_lower_bound` and `rejection_upper_bound` fall on opposite
+sides of a threshold that would change the conclusion — nominal 0.05, or whatever cutoff a future
+calibration rule uses — that cell is `INDETERMINATE` and must not be used to derive a critical value,
+justify a method choice, or support a power claim. It is reported with its bounds and left there.
 - Any deviation from this protocol during execution must be recorded in the output as a deviation.
   Undocumented deviation voids the run.
 
@@ -238,18 +300,48 @@ Plus a run-level record: protocol version, approval reference, and an explicit
 
 > **This protocol must be approved, in writing, by the co-authors before any execution.**
 
-Approval requires, at minimum:
+### 16.1 Exact specifications that must be filled in FIRST
 
-- [ ] **P1.** Scenario grid (§6) approved, or amended before execution
-- [ ] **P2.** DGP assumptions (§7.2) approved, **including the outcome-transform decision left open in §7.2**
-- [ ] **P3.** Error structures (§7.3) approved
-- [ ] **P4.** R = 10,000 approved or increased
-- [ ] **P5.** Method set (§10) approved; decision on whether M5 is included at all
-- [ ] **P6.** Monte Carlo interval method (§12) selected
-- [ ] **P7.** Confirmation that the historical §2 figures are **not** treated as evidence
-- [ ] **P8.** Confirmation that execution touches **no** project outcome
-- [ ] **P9.** Script committed and environment pinned **before** the first run
-- [ ] **P10.** Explicit authorisation to execute
+**The protocol cannot be approved while any row below is unspecified.** Each is currently blank by
+design; none may be deferred to the script.
+
+| # | Item | Value |
+|---|---|---|
+| 1 | Balanced cluster allocation, per G (all five scenarios) | `________` |
+| 2 | Unbalanced cluster allocation, per G (all five scenarios) | `________` |
+| 3 | Cluster-intercept variance | `________` |
+| 4 | Idiosyncratic-error variance | `________` |
+| 5 | Heteroskedasticity-generating rule (E2) | `________` |
+| 6 | Heavy-tail distribution and degrees of freedom (E3) | `________` |
+| 7 | Regressor construction (i.i.d. or clustered; exact distribution) | `________` |
+| 8 | Clustered-regressor / high-leverage stress arm: included? | `________` |
+| 9 | Outcome construction / transformation | `________` |
+| 10 | Master seed (exact integer) | `________` |
+| 11 | Deterministic seed-derivation rule | `________` |
+| 12 | RNG algorithm (named) | `________` |
+| 13 | Monte Carlo interval method (Wilson / Clopper–Pearson) | `________` |
+| 14 | M5 wild bootstrap: included or excluded | `________` |
+| 15 | All package versions (full enumeration) | `________` |
+| 16 | Executable script repository path | `________` |
+| 17 | Executable script SHA-256 | `________` |
+
+### 16.2 Approval checklist
+
+- [ ] **P1.** Every row of §16.1 filled in, in this document, and reviewed
+- [ ] **P2.** Scenario grid (§6) approved, or amended before execution
+- [ ] **P3.** DGP assumptions (§7.2) approved as written, with no cell left to the script
+- [ ] **P4.** Error structures (§7.3) approved with exact rules and parameters
+- [ ] **P5.** R = 10,000 approved or increased
+- [ ] **P6.** Method set (§10) approved, including the explicit M5 include/exclude decision
+- [ ] **P7.** Paired-inference requirement (§12) understood and accepted
+- [ ] **P8.** Failure-bound reporting and the `INDETERMINATE` rule (§15.2) accepted
+- [ ] **P9.** Confirmation that the historical §2 figures are **not** treated as evidence
+- [ ] **P10.** Confirmation that execution touches **no** project outcome
+- [ ] **P11.** **Executable script committed and reviewed**, path and SHA-256 recorded in §16.1
+- [ ] **P12.** Explicit authorisation to execute
+
+> **No run is authorized by this document, and none was authorized in the correction pass that
+> produced this revision.**
 
 **Until P1–P10 are signed, this document is a plan and nothing more. No results exist. No size
 adjustment may be claimed. A9 remains `A9_BLOCKED_MISSING_REGISTERED_SESOI` independently of this

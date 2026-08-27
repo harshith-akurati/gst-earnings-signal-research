@@ -1,6 +1,6 @@
 # Erratum to `PREREGISTRATION_GAP_AUDIT_v1.0.md` — items C6 and C7
 
-**Date drafted:** 2026-08-26 · **Status:** DRAFT, **uncommitted**, for co-author review.
+**Date drafted:** 2026-08-26 · **Status:** DRAFT, committed on a review branch; not approved, registered, or final.
 **Type:** **ADMINISTRATIVE ERRATUM ONLY.**
 
 This erratum records that the register entries for C6 and C7 have not been updated to reflect a

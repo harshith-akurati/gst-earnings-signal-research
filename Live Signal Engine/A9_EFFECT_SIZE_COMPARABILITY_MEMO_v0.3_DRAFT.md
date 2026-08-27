@@ -1,6 +1,6 @@
 # A9 Effect-Size Comparability Memo — v0.3 DRAFT
 
-**Date drafted:** 2026-08-26 · **Status:** DRAFT, **uncommitted**, for co-author review.
+**Date drafted:** 2026-08-26 · **Status:** DRAFT, committed on a review branch; not approved, registered, or final.
 **Type:** **FEASIBILITY ASSESSMENT ONLY.** No power calculation is performed, licensed, or implied by
 this memo. No SESOI is proposed.
 
@@ -98,29 +98,45 @@ subject to construct comparability. It may **never** supply the *uncertainty* or
 5.3) — those must be computed from this design's own realised cluster structure. Nothing found in the
 2026-08-26 search clears even 5.1.
 
-## 6. Size-adjustment requirement
+## 6. Anti-conservatism warning, and what size-adjusted power would actually require
 
-**This requirement stands on its own and does not depend on any project simulation.** It follows from
-the general fact that when a test's empirical size exceeds its nominal size, power computed against
-the nominal reference distribution overstates true power.
+**The general fact.** When a test rejects more often than its nominal level under the null, power
+computed against the nominal reference distribution overstates true power. That much is
+distribution-free and needs no project simulation.
 
-**Normative rule.** Any future A9 output **must** either:
+**What a null simulation does and does not deliver.** A true-null simulation estimates **rejection
+rates under specifically declared synthetic data-generating processes**. That is its entire output.
+**It does not by itself transform nominal power into size-adjusted power**, and an earlier draft of
+this memo implied otherwise. Correcting that is the point of this section.
 
-- **(a)** report **size-adjusted power**, computed against the test's empirical size at the realised
-  cluster count and balance, using a reproducible in-repository simulation; **or**
-- **(b)** carry an **explicit upper-bound label** stating the nominal reference distribution used and
-  stating that the figure is an **upper bound on true power**, not an estimate of it.
+**Size-adjusted power requires all five of the following**, and a null simulation supplies only an
+input to the second:
 
-An unlabelled nominal-reference power number is not acceptable output. **No empirical-size value is
-adopted here**, because no reproducible one exists (see §6.1). Which of (a) or (b) applies, and any
-numbers entering either, must come from evidence produced after the gap in §6.1 is closed.
+1. a **registered SESOI**, or an explicitly labelled hypothetical alternative;
+2. a **predeclared calibration rule** deriving a 5% critical cutoff from the null simulation — the
+   rule must be fixed before the null results are seen, or the cutoff is chosen by the data;
+3. **separate alternative-DGP simulations** run at that calibrated cutoff — power is a property of
+   the alternative, and no null run can supply it;
+4. the **same cluster-count, balance, regressor and error-structure scenario** across the null and
+   alternative runs, or the cutoff does not transfer;
+5. **Monte Carlo uncertainty** for the resulting power estimate itself, not only for the null rate.
+
+**Until all five exist, only nominal-reference power may be reported, and only with an explicit
+anti-conservatism / upper-bound warning** naming the reference distribution used and stating that the
+figure is an upper bound on true power rather than an estimate of it. An unlabelled nominal-reference
+power number is not acceptable output.
+
+**No rejection-rate value is adopted here.** None is available that could be (§6.1), and adopting one
+would not be sufficient in any case.
 
 ### 6.1 `SIMULATION_EVIDENCE_REPRODUCIBILITY_GAP` — historical discrepancy note
 
 **Status: `SIMULATION_EVIDENCE_REPRODUCIBILITY_GAP`. The figures in this subsection are recorded for
 historical continuity only. They are NOT used to support any normative claim in this memo, and they
-must not be cited as the project's empirical size, quoted in a preregistration, or used to justify a
-threshold, a method choice, or a power calculation.**
+must not be cited as **the project's empirical size** — they are not that, and no figure in this
+repository is. They are an **estimated rejection rate under a named synthetic DGP** that was never
+recorded. They must not be quoted in a preregistration, or used to justify a threshold, a method
+choice, a calibrated cutoff, or a power calculation.**
 
 `GST_HYP01_STATISTICAL_METHOD_REVIEW_PACKET_v1.0_DRAFT.md` §5.1 reports a synthetic demonstration with
 these characteristics, quoted from the packet:
@@ -157,11 +173,13 @@ The figures as recorded in that packet:
 
 **No simulation was rerun for this memo, and none may be run on prospective project data.**
 
-**Closing this gap** requires a reproducible in-repository size study — committed script, recorded
-seed, pinned environment, at the realised cluster count and balance — before any size-adjusted power
-figure may be reported under §6(a). Until then only §6(b), the explicit upper-bound label, is
-available, and it must be stated qualitatively rather than with a numeric size correction drawn from
-the table above.
+**Closing this gap** requires a reproducible in-repository **null** study — committed script,
+recorded seed, pinned environment, at the realised cluster count and balance. That study would supply
+**one** of the five elements listed in §6; it would not on its own license a size-adjusted power
+figure. Until all five exist, only **nominal-reference power carrying the explicit
+anti-conservatism / upper-bound warning** may be reported, and that warning must be stated
+qualitatively — never with a numeric size correction drawn from the table above, which is not a
+measurement of this design.
 
 ## 7. Inference status carried forward
 
@@ -195,11 +213,13 @@ In order. Each is a human authoring action; none is performed here.
    `C6_C7_GAP_AUDIT_ERRATUM_DRAFT.md`; it is unsigned and makes no inference decision.
 3. A decision on whether A9 runs on the registered SESOI alone or additionally on an explicitly
    hypothetical Cohen-style grid.
-4. A **reproducible in-repository size study** at the realised cluster count and balance, if
-   size-adjusted power is to be reported rather than an upper bound. The §6.1 figures cannot serve:
-   they carry `SIMULATION_EVIDENCE_REPRODUCIBILITY_GAP` and are historical record only. A prospective
-   protocol for that study is drafted at
-   `HYP01_INFERENCE_SIZE_SIMULATION_PROTOCOL_v0.1_DRAFT.md`; it is **unapproved and unexecuted**, and
-   it produces no empirical results.
+4. If size-adjusted power is wanted rather than a labelled upper bound, **all five elements in §6**
+   — not merely a null simulation. That means a reproducible in-repository **null** study, a
+   predeclared calibration rule, **separate alternative-DGP runs** at the calibrated cutoff, matched
+   scenarios, and Monte Carlo uncertainty on the power estimate. The §6.1 figures cannot serve any of
+   these: they carry `SIMULATION_EVIDENCE_REPRODUCIBILITY_GAP` and are historical record only. A
+   prospective protocol for the **null** study alone is drafted at
+   `HYP01_INFERENCE_SIZE_SIMULATION_PROTOCOL_v0.1_DRAFT.md`; it is **unapproved and unexecuted**, it
+   produces no empirical results, and it is **one input, not the whole requirement**.
 
 Until item 1 exists, A9 remains **`A9_BLOCKED_MISSING_REGISTERED_SESOI`**.

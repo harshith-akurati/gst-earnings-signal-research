@@ -48,9 +48,11 @@ cluster variable        : ticker
 
 - The predictor `gst_zscore` is a **z-score**, so one unit is **one standard deviation** of the
   project's own attention construction, on that construction's own baseline.
-- The outcome `abs_overnight_gap` is an **absolute** overnight movement magnitude. It is
-  **non-negative by construction** and therefore **not symmetric about zero** in the way a signed
-  return is.
+- The outcome `abs_overnight_gap` is an **absolute** overnight movement magnitude and is
+  **non-negative by construction**. **This says nothing about the sign of `beta_gst`.** A regression
+  coefficient on a non-negative outcome can be positive or negative: higher attention may be
+  associated with larger *or* smaller absolute movement. The coefficient's range is not bounded by
+  the outcome's range.
 - `beta_gst` consequently reads as: *the change in expected absolute overnight movement associated
   with a one-standard-deviation increase in pre-announcement attention.*
 
@@ -58,8 +60,13 @@ cluster variable        : ticker
 
 - A SESOI must be stated **in these units**, or with an explicit, documented conversion into them. A
   value borrowed from a signed-return study is not in these units.
-- Because the outcome is bounded below at zero, a **symmetric** equivalence bound `±Δ` is a
-  substantive assumption, not a default. See §7.
+- **Whether the bound is symmetric is a substantive judgement, not a consequence of the outcome's
+  non-negativity.** An earlier draft implied the latter; that inference was wrong and is corrected
+  here. The real question is whether a positive association of size Δ and a negative association of
+  size Δ are **equally meaningful to this project**. If they are, a symmetric `±Δ` is right. If, say,
+  an amplification of size Δ would change conclusions but a dampening of the same size would not,
+  an asymmetric bound is right — and that asymmetry must be argued substantively, not derived from
+  the outcome's scale. See §7.
 
 ## 3. What a SESOI is, and is not
 
@@ -75,9 +82,15 @@ a threshold derived from what the data are likely to show; or a restatement of `
 An equivalence test (e.g. TOST) against bounds `[−Δ, +Δ]` asks whether the effect is *small enough to
 be uninteresting*, rather than whether it is distinguishable from zero.
 
-**A successful equivalence result would license this claim:** *the data are inconsistent with an
-effect as large as Δ, at the stated alpha* — i.e. any true amplification effect is smaller than the
-threshold the co-authors declared to matter.
+**A successful symmetric equivalence result would license this claim:** *at the registered procedure
+and alpha, the data are inconsistent with effects at or beyond **both** −Δ and +Δ* — i.e. the
+association is smaller in magnitude than the threshold the co-authors declared to matter, **in either
+direction**.
+
+It does **not** constrain amplification only. An earlier draft said it did; that was wrong. A
+symmetric equivalence test rules out a dampening association of size Δ exactly as much as an
+amplifying one. If an asymmetric bound is registered instead, the licensed claim narrows to whatever
+that bound actually excludes, and must be stated in those terms.
 
 ## 5. What equivalence would NOT prove
 
@@ -113,7 +126,7 @@ recommendation among them.
 | Basis | What it would require | Status |
 |---|---|---|
 | **A. Substantive/economic materiality** | A stated threshold of absolute overnight movement that would matter for the project's purpose, converted into `gst_zscore` units with documented assumptions | Available; requires an explicit judgement |
-| **B. Measurement resolution** | The smallest effect distinguishable given the construction's own precision | Available; requires documenting that precision without using outcomes |
+| **B. Measurement resolution** *(feasibility input, not a basis on its own)* | The smallest effect distinguishable given the construction's own precision | Available, but **cannot alone define a SESOI**. Resolution answers "what could be detected", not "what would matter" — a detectable effect can be substantively trivial and an important effect can be below resolution. It may **inform** a value chosen on basis A, or flag that a substantively chosen Δ is unmeasurable, but a SESOI resting on resolution alone has no substantive justification and is not valid |
 | **C. Explicitly hypothetical Cohen-style grid** | A conventional small/medium/large grid, **labelled as convention, not evidence**, used only to show sensitivity across a range | **Permitted only as a hypothetical grid**, never as *the* SESOI, and never presented as a project expectation |
 | **D. External literature anchor** | A published estimate satisfying every comparability criterion in the search log | **Currently unavailable** — the 2026-08-26 bounded search found none; Drake, Da–Engelberg–Gao and Ahluwalia are all excluded and **prohibited as direct anchors** |
 | **E. Any project-derived value** | — | **PROHIBITED** (§6) |
@@ -136,6 +149,15 @@ any eligible outcome exists. Left blank deliberately.
 | 6 | **Approval date** | `________` *(must precede the first eligible HYP-01 outcome)* |
 | 7 | **Approving co-authors** | `________` *(named individuals, not a role)* |
 | 8 | **Relationship to equivalence testing** | `________` *(does Δ define an equivalence bound? if so, which procedure, and is it registered as primary, secondary, or not at all?)* |
+
+> **Registering an equivalence test is a NEW analysis-design decision requiring its own dated
+> authorization.** Selecting Δ does **not** silently add TOST — or any equivalence procedure — to the
+> locked model. The locked primary analysis is a two-sided test of `beta_gst = 0` at α = 0.05, and it
+> stays that way unless a separate dated instrument, written before any eligible outcome exists, adds
+> an equivalence procedure and states its role (primary, secondary, or sensitivity), its bounds, its
+> alpha, and its multiplicity treatment. A SESOI registered for A9 design-sensitivity purposes and an
+> equivalence bound registered for inference are two decisions, and either may be taken without the
+> other.
 
 ## 9. Co-author decision table
 

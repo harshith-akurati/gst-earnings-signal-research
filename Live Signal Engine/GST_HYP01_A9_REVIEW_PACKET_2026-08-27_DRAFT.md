@@ -1,6 +1,6 @@
 # GST HYP-01 / A9 review and decision packet — 2026-08-27 DRAFT
 
-**Status:** DRAFT, for co-author review. **Nothing in this packet is approved, registered, or final.**
+**Status:** DRAFT, committed on a review branch; not approved, registered, or final. **Nothing in this packet is approved or registered.**
 
 > **Date note.** The `2026-08-27` in this filename is the label specified by the co-author for this
 > review cycle. The host clock at the time of preparation read **2026-08-26 21:48 America/Chicago**,
@@ -164,10 +164,21 @@ synthetic demonstration that was run **outside the repository** under a **true n
 support any normative claim, are **not** the project's empirical size, and must not be quoted in a
 preregistration or used to justify a threshold, a method choice, or a power figure.
 
-The size-adjustment requirement in that memo's §6 stands on general statistical grounds and does not
-depend on those numbers. Closing the gap requires a reproducible in-repository study; a prospective
-protocol is drafted at `HYP01_INFERENCE_SIZE_SIMULATION_PROTOCOL_v0.1_DRAFT.md`, which is
-**unapproved and unexecuted**.
+Those figures are **not** "the project's empirical size" — no figure in this repository is. They are
+an estimated rejection rate under a synthetic DGP that was never recorded.
+
+**A null simulation would not, by itself, produce size-adjusted power.** It estimates rejection rates
+under declared synthetic DGPs and nothing more. Size-adjusted power additionally requires a registered
+SESOI or labelled hypothetical alternative, a **predeclared calibration rule** deriving a 5% cutoff
+from the null results, **separate alternative-DGP simulations** at that cutoff, matched
+cluster-count/balance/regressor/error scenarios, and Monte Carlo uncertainty on the power estimate
+itself. Until all five exist, only **nominal-reference power with an explicit
+anti-conservatism/upper-bound warning** may be reported. An earlier draft implied a null run alone
+sufficed; that is corrected in the memo's §6.
+
+A prospective protocol for the **null half only** is drafted at
+`HYP01_INFERENCE_SIZE_SIMULATION_PROTOCOL_v0.1_DRAFT.md`, which is **unapproved and unexecuted** and
+cannot be approved until every parameter in its §16.1 is filled in.
 
 ## 8. SESOI blocker
 
@@ -200,24 +211,30 @@ Each item requires an explicit decision. None is pre-answered.
 - [ ] **A12.** Authorise removal of `DRAFT` status, per document, once A1–A11 are settled
 - [ ] **A13.** Authorise merge of the draft PR into `phase6-control-matching-integrity`
 
-## 10. Commit and PR plan
+## 10. Current repository state
 
-Four commits on `hyp01-a9-reconciliation-20260826`, no amend, no squash:
+**PR #39 is OPEN as a DRAFT.**
+<https://github.com/harshith-akurati/gst-earnings-signal-research/pull/39>
 
-| # | Subject | Contents |
-|---|---|---|
-| 1 | `Document HYP-01 and A9 artifact reconciliation` | reconciliation table, search log, this review packet, draft manifest |
-| 2 | `Draft administrative C6/C7 gap-audit erratum` | C6/C7 erratum |
-| 3 | `Draft HYP-01 literature framing and A9 comparability` | literature-framing amendment, A9 comparability memo |
-| 4 | `Prepare SESOI and inference-simulation decision packets` | SESOI decision packet, simulation protocol, updated manifest |
+| Field | Value |
+|---|---|
+| PR | **#39**, state **OPEN**, **isDraft = true** |
+| Base | **`phase6-control-matching-integrity`** |
+| Head | **`hyp01-a9-reconciliation-20260826`** |
+| Auto-merge | **not enabled** |
+| Merged | **no** |
 
-Push `hyp01-a9-reconciliation-20260826` only. Open a **DRAFT** pull request against
-**`phase6-control-matching-integrity`**.
+The branch carries four documentation commits plus this correction pass. Exact SHAs are recorded in
+the commit history and in `GST_HYP01_A9_DRAFT_MANIFEST_2026-08-27.txt`; they are deliberately **not**
+restated here, because a document committed inside the branch cannot contain the SHA of the commit
+that adds it.
 
 > **The PR must never target `phase5-unattended-panel-recovery`.** That branch is the live
-> machine-data-only collection branch. Nothing in this package may reach it.
+> machine-data-only collection branch. Nothing in this package may reach it, and the base must remain
+> `phase6-control-matching-integrity`.
 
-**Do not merge** until A1–A13 are recorded.
+**Do not merge, mark ready for review, approve, enable auto-merge, or change the base** until the §9
+checklist is recorded.
 
 ## 11. No prospective outcome was inspected
 
