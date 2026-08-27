@@ -158,6 +158,29 @@ def load_mechstab():
 
 
 MECH = load_mechstab()
+
+DESIGN_PATH = ("Correction_Overlays/2026-08-22_C5_Control_Matching/"
+               "CORRECTIVE_DESIGN_v1.0_FROZEN_2026-08-22.md")
+
+
+def design_refit_count():
+    """The frozen corrective design states a leave-one-ticker-out refit count that
+    differs from the realised count in the results artifact (28 vs 26). Both are
+    real, sourced values; v1.1 reports the realised 26 and flags the design's 28."""
+    import re as _re
+    fp = ROOT / DESIGN_PATH
+    if not fp.exists():
+        bad("missing artifact: " + DESIGN_PATH)
+        return float("nan")
+    m = _re.search(r"range of the point estimate across the\s+(\d+)\s+refits",
+                   fp.read_text(encoding="utf-8"))
+    if not m:
+        bad(DESIGN_PATH + ": could not locate the stated refit count")
+        return float("nan")
+    return float(m.group(1))
+
+
+DESIGN_REFITS = design_refit_count()
 DIRTXT = (ROOT / DIR_REPORT).read_text(encoding="utf-8")
 
 
@@ -203,6 +226,77 @@ CLAIMS = {
                  dig(A["overlay"], "sensitivity.c_leave_one_ticker_out_mean_paired_diff_pp.max")),
     "2.3772": C("overlay: sensitivity.c.max",
                 dig(A["overlay"], "sensitivity.c_leave_one_ticker_out_mean_paired_diff_pp.max")),
+    # ---- v1.1 sensitivity D and full overlay detail -------------------------
+    "+2.5682": C("overlay: sensitivity.d_excluding_8_overlap_identities.coef_pp",
+                 dig(A["overlay"], "sensitivity.d_excluding_8_overlap_identities.coef_pp")),
+    "2.5682": C("overlay: sensitivity.d.coef_pp",
+                dig(A["overlay"], "sensitivity.d_excluding_8_overlap_identities.coef_pp")),
+    "0.00075": C("overlay: sensitivity.d.p_value",
+                 dig(A["overlay"], "sensitivity.d_excluding_8_overlap_identities.p_value")),
+    "0.6347": C("overlay: sensitivity.d.cr2_se_pp",
+                dig(A["overlay"], "sensitivity.d_excluding_8_overlap_identities.cr2_se_pp")),
+    "18.128": C("overlay: sensitivity.d.satterthwaite_df",
+                dig(A["overlay"], "sensitivity.d_excluding_8_overlap_identities.satterthwaite_df")),
+    "4.046": C("overlay: sensitivity.d.t_stat",
+               dig(A["overlay"], "sensitivity.d_excluding_8_overlap_identities.t_stat")),
+    "+1.2354": C("overlay: sensitivity.d.ci95_pp[0]",
+                 dig(A["overlay"], "sensitivity.d_excluding_8_overlap_identities.ci95_pp.0")),
+    "+3.9009": C("overlay: sensitivity.d.ci95_pp[1]",
+                 dig(A["overlay"], "sensitivity.d_excluding_8_overlap_identities.ci95_pp.1")),
+    "65": C("overlay: sensitivity.d.n_pairs",
+            dig(A["overlay"], "sensitivity.d_excluding_8_overlap_identities.n_pairs")),
+    "0.638": C("overlay: primary.inference.cr2_se_pp",
+               dig(A["overlay"], "primary.inference.cr2_se_pp")),
+    "19.742": C("overlay: primary.inference.satterthwaite_df",
+                dig(A["overlay"], "primary.inference.satterthwaite_df")),
+    "3.260": C("overlay: primary.inference.t_stat",
+               dig(A["overlay"], "primary.inference.t_stat")),
+    "+0.7479": C("overlay: primary.inference.ci95_pp[0]",
+                 dig(A["overlay"], "primary.inference.ci95_pp.0")),
+    "+3.4116": C("overlay: primary.inference.ci95_pp[1]",
+                 dig(A["overlay"], "primary.inference.ci95_pp.1")),
+    "0.9254": C("overlay: sensitivity.a.cr2_se_pp",
+                dig(A["overlay"], "sensitivity.a_reuse_retained_self_match_excluded.cr2_se_pp")),
+    "15.118": C("overlay: sensitivity.a.satterthwaite_df",
+                dig(A["overlay"], "sensitivity.a_reuse_retained_self_match_excluded.satterthwaite_df")),
+    "2.117": C("overlay: sensitivity.a.t_stat",
+               dig(A["overlay"], "sensitivity.a_reuse_retained_self_match_excluded.t_stat")),
+    "-0.0120": C("overlay: sensitivity.a.ci95_pp[0]",
+                 dig(A["overlay"], "sensitivity.a_reuse_retained_self_match_excluded.ci95_pp.0")),
+    "+3.9302": C("overlay: sensitivity.a.ci95_pp[1]",
+                 dig(A["overlay"], "sensitivity.a_reuse_retained_self_match_excluded.ci95_pp.1")),
+    "113": C("overlay: sensitivity.a.n_pairs",
+             dig(A["overlay"], "sensitivity.a_reuse_retained_self_match_excluded.n_pairs")),
+    "2.351": C("overlay: sensitivity.b.t_stat",
+               dig(A["overlay"], "sensitivity.b_unpaired_welch_on_corrected_arms.t_stat")),
+    "138.58": C("overlay: sensitivity.b.welch_df",
+                dig(A["overlay"], "sensitivity.b_unpaired_welch_on_corrected_arms.welch_df")),
+    "3.619": C("overlay: sensitivity.e_balance.mean_abs_pre_drift_treated_pp",
+               dig(A["overlay"], "sensitivity.e_balance.mean_abs_pre_drift_treated_pp")),
+    "2.9662": C("overlay: sensitivity.e_balance.mean_abs_pre_drift_control_pp",
+                dig(A["overlay"], "sensitivity.e_balance.mean_abs_pre_drift_control_pp")),
+    "0.00193": C("market: repeated_control_sensitivity.deduplicated_cr2.p_value (SENSITIVITY)",
+                 dig(A["market"], "repeated_control_sensitivity.deduplicated_cr2.p_value")),
+    "0.0120": C("overlay: |sensitivity.a.ci95_pp[0]| (Unicode-minus form)",
+                abs(dig(A["overlay"], "sensitivity.a_reuse_retained_self_match_excluded.ci95_pp.0"))),
+    "73": C("overlay: sample.surviving_pairs / primary.n_pairs",
+            dig(A["overlay"], "sample.surviving_pairs")),
+    "20": C("overlay: sample.dropped_self_match_E1",
+            dig(A["overlay"], "sample.dropped_self_match_E1")),
+    "40": C("overlay: sample.dropped_no_unique_control_E2",
+            dig(A["overlay"], "sample.dropped_no_unique_control_E2")),
+    "60": C("overlay: sample.observations_lost_vs_original_treated_arm",
+            dig(A["overlay"], "sample.observations_lost_vs_original_treated_arm")),
+    "72": C("overlay: sensitivity.e_balance.same_ticker_pairs",
+            dig(A["overlay"], "sensitivity.e_balance.same_ticker_pairs")),
+    "25": C("overlay: sensitivity.d.n_clusters",
+            dig(A["overlay"], "sensitivity.d_excluding_8_overlap_identities.n_clusters")),
+    "19.7": C("overlay: primary.inference.satterthwaite_df (1dp)",
+              round(dig(A["overlay"], "primary.inference.satterthwaite_df"), 1)),
+    "15.1": C("overlay: sensitivity.a.satterthwaite_df (1dp)",
+              round(dig(A["overlay"], "sensitivity.a_reuse_retained_self_match_excluded.satterthwaite_df"), 1)),
+    "28": C(DESIGN_PATH + ": stated leave-one-ticker-out refit count "
+            "(differs from the realised 26; v1.1 reports both)", DESIGN_REFITS),
     # ---- v1.1 primary clustered magnitude model (PRIMARY gate) ---------------
     "+1.509": C("market: primary_magnitude_abs_day_return.coef_pp",
                 dig(A["market"], "clustered_inference.primary_magnitude_abs_day_return.coef_pp")),
@@ -461,6 +555,17 @@ ALLOW = {
     "27": "ISO day component of the 2026-08-27 revision date",
     "336": "abstract word count",
     "5.8": "subsection number (v1.1 adds 5.1/5.2 and shifts the tail)",
+    "4": "methods subsection prefix 4A / count of sensitivities",
+    "13": "section number (Future work, added in v1.1)",
+    "10.0": "subsection number (10.0 Why a detectable association ...)",
+    "2021": "year",
+    "2022": "year",
+    "19": "ISO day component in an excluded-identity date (2023-01-19)",
+    "21": "ISO day component in an excluded-identity date (2024-03-21)",
+    "31": "ISO day component in an excluded-identity date (2023-10-31)",
+    "02": "ISO month component in an excluded-identity date (2025-02-05)",
+    "03": "ISO day component in an excluded-identity date (2021-08-03)",
+    "05": "ISO day component in an excluded-identity date (2025-02-05)",
     "231": "declared abstract word count",
     "0.5": "AUC chance level (definition)",
     "100": "Google Trends index maximum (definition)",
@@ -650,6 +755,98 @@ def main(argv=None):
         bad("the manuscript does not state that the replication failed its gate")
     else:
         ok("replication correctly described as having failed its gate")
+
+    # ---- v1.1 interpretation guards ------------------------------------------
+    text = MANUSCRIPT.read_text(encoding="utf-8")
+    low = text.lower()
+
+    # 1. superseded Q1 must be labelled
+    if "1.4411" in text:
+        near = text[max(0, text.index("1.4411") - 1500):text.index("1.4411") + 1500].lower()
+        if "supersed" not in near:
+            bad("the +1.4411 pp Q1 result appears without a SUPERSEDED label nearby")
+        else:
+            ok("superseded Q1 result (+1.4411 pp) is labelled as superseded")
+    else:
+        ok("superseded Q1 result not cited as a current estimate")
+
+    # 2. d = 1.294 must never be called matched or predictive
+    if "1.294" in text:
+        i = text.index("1.294")
+        near = text[max(0, i - 2500):i + 2500].lower()
+        if "unmatched" not in near:
+            bad("d = 1.294 appears without being labelled an UNMATCHED comparison")
+        for wordset, label in [(("predict", "forecast"), "predictive"),
+                               (("matched-event", "matched level-1"), "matched")]:
+            pass
+        # explicit: the sentence must not assert it is matched or predictive
+        for phrase in ("matched comparison of 1.294", "1.294 predicts",
+                       "predictive effect size of 1.294"):
+            if phrase in low:
+                bad(f"d = 1.294 presented as matched/predictive: {phrase!r}")
+        ok("d = 1.294 is labelled unmatched and not presented as matched or predictive")
+
+    # 3. secondary results must not be promoted
+    PRIMARY_P = "0.0662"
+    for sec_p, name in (("0.03707", "benchmark-adjusted"),
+                        ("0.00193", "deduplicated"),
+                        ("0.00075", "sensitivity D"),
+                        ("0.00397", "matched primary")):
+        if sec_p in text:
+            i = text.index(sec_p)
+            near = text[max(0, i - 1200):i + 1200].lower()
+            for claim in ("incremental contribution", "forecast improvement",
+                          "trading value", "alpha", "predictive skill"):
+                if claim in near and "not" not in near[:near.find(claim)][-90:]:
+                    bad(f"{name} p={sec_p} appears adjacent to an incremental/alpha claim ({claim})")
+    ok("no secondary or association p-value is promoted into an incremental-prediction claim")
+
+    # 4. sensitivity D disclosed and labelled
+    if "2.5682" not in text:
+        bad("sensitivity D (+2.5682 pp) is not disclosed in the manuscript")
+    else:
+        i = text.index("2.5682")
+        near = text[max(0, i - 2500):i + 2500].lower()
+        if "sensitivity" not in near:
+            bad("sensitivity D appears without being labelled a sensitivity analysis")
+        elif "overlap" not in near:
+            bad("sensitivity D appears without its overlap-identity exclusion described")
+        else:
+            ok("sensitivity D disclosed, labelled a sensitivity, exclusion described")
+    for zone, zname in ((text[:text.index("## 2.")], "title/abstract"),):
+        if "2.5682" in zone:
+            bad(f"sensitivity D appears in the {zname} — it must not headline")
+    ok("sensitivity D absent from title and abstract")
+
+    # 5. prospective study must be described as having no results
+    if "hyp-01" in low:
+        i = low.index("hyp-01")
+        near = low[max(0, i - 600):i + 1400]
+        if not any(k in near for k in ("no results", "no eligible observation",
+                                       "contributes no evidence")):
+            bad("prospective HYP-01 is mentioned without stating it has produced no results")
+        else:
+            ok("prospective HYP-01 described as having produced no results")
+
+    # 6. prohibited causal / alpha / confirmatory language
+    PROHIBITED = [
+        ("attention causes", "causal claim"),
+        ("causes larger", "causal claim"),
+        ("caused by attention", "causal claim"),
+        ("attention drives", "causal claim"),
+        ("produces alpha", "alpha claim"),
+        ("generates alpha", "alpha claim"),
+        ("attention alpha is", "alpha claim"),
+        ("confirms hyp-01", "confirmatory claim"),
+        ("confirmatory evidence that attention", "confirmatory claim"),
+        ("proves that attention", "proof claim"),
+        ("tradable signal", "tradability claim"),
+    ]
+    hits = [lab for phrase, lab in PROHIBITED if phrase in low]
+    if hits:
+        bad(f"prohibited interpretation language present: {sorted(set(hits))}")
+    else:
+        ok("no prohibited causal, alpha, confirmatory or tradability language")
 
     print()
     if FAIL:

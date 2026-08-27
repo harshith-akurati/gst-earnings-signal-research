@@ -99,3 +99,51 @@ submission.** Existing figures F1–F3 are unchanged and remain correct.
    v1.0** and does not carry the corrected Level-1 result.
 4. Target-venue formatting and the anonymised build.
 5. Remove `_DRAFT` from the filename only when 1–4 are settled.
+
+---
+
+## 10. Completion pass — 2026-08-27 (second commit)
+
+Appended after the first v1.1 commit `9e2e76d`. That commit is preserved exactly; nothing was
+amended, reset, rebased, or force-pushed.
+
+**Added in this pass**
+
+| Item | Detail |
+|---|---|
+| **Sensitivity D disclosed** | `+2.5682 pp, p = 0.00075`, 65 pairs, excluding the eight overlap identities. Previously absent from both manuscript and audit |
+| Table 2 rebuilt | Primary plus **all four** sensitivities with n, SE, df, t, p, CI; absent fields marked "not in artifact" |
+| §4A Methods | Four labelled subsections: matched association · clustered regression · OOS forecasting · trading evaluation |
+| §10.0 Discussion | Why a detectable association coexists with null incremental prediction |
+| §11 Limitations | Rewritten to cover retrospective selection, multiple development analyses, matching assumptions, ticker clustering, Trends normalisation, estimate vintage, generalisability |
+| §13 Future work | Prospective HYP-01 as ongoing confirmatory study with **no results** |
+| `p = 0.00193` | Added as a labelled sensitivity, not promoted |
+| Number audit v1.1 | 65 claims with JSON pointer, full-precision value, rounding rule, status |
+| Figure/table plan v1.1 | Tables 1–3 and Figures 1–2 specified |
+| Checker | Six new interpretation guards + 72 new claims |
+
+**Checker results**
+
+| Run | Result |
+|---|---|
+| Original v1.0 checker (from base commit, unmodified) on v1.0 manuscript | **PASSED** — 82 claims, 139 tokens |
+| Extended checker on v1.1 | **PASSED** — 154 claims, 213 tokens, 87 allowlisted |
+
+All six new guards pass: superseded-Q1 labelling; `d = 1.294` not matched/predictive; no secondary
+p-value promoted; sensitivity D disclosed, labelled, and absent from title/abstract; prospective
+HYP-01 has no results; no causal/alpha/confirmatory language.
+
+**Two discrepancies recorded rather than smoothed**
+
+1. The frozen corrective design states **28** leave-one-ticker-out refits; the results artifact
+   reports **26**. v1.1 reports the realised 26 and flags the difference. Nothing was recomputed.
+2. Balance is imperfect: treated events carry mean |pre-drift| **3.619 pp** versus **2.9662 pp** for
+   controls. Disclosed in §5.1 and §11 as a limitation of the match, not a result.
+
+**Still open before submission**
+
+1. Co-author review of v1.1, the audit, and the figure plan.
+2. Decide Figure 2 (`PROPOSED`, presentation-only).
+3. The executive summary still reflects v1.0 and does not carry the corrected Level-1 result.
+4. Target-venue formatting and anonymised build.
+5. Remove `_DRAFT` only when 1–4 are settled.

@@ -260,6 +260,86 @@ Interpretation requires knowing what was fixed in advance and what was not.
 
 ---
 
+---
+
+## 4A. Methods: four distinct analyses, four distinct estimands
+
+The results in Section 5 come from four analyses that answer different questions on different
+samples with different estimands. Conflating them is the specific error this paper is about, so we
+state each separately before reporting any of them. **All four are retrospective and exploratory.**
+
+### 4A.1 Corrected matched association (Level 1)
+
+**Question.** Do high-attention earnings events move more than *comparable earnings events*?
+
+**Design.** Treated high-attention earnings events matched one-to-one against control earnings
+events. The August 2022 correction restricted the committed matched set after two defects were
+found: self-matching (an event matched to itself) and control reuse (one control serving several
+treated events). Correction dropped 20 self-matched pairs and 40 pairs lacking a unique control,
+leaving 73 pairs.
+
+**Estimand.** ATT on |day return|, percentage points.
+**Statistic.** Mean paired difference over surviving matched pairs.
+**Inference.** CR2 (BRL) covariance clustered on ticker, coefficient-specific Satterthwaite df,
+26 clusters.
+**Scope limit, quoted from the artifact.** *"Restriction of the committed matched set, not a
+re-match; the control candidate pool is not committed."*
+
+**What it cannot answer.** Whether attention *predicts* anything out of sample, and whether any of
+it is tradable. Matching controls for what was matched on; it does not make the comparison causal,
+and it is estimated on data already observed.
+
+### 4A.2 Ticker-clustered regression (primary magnitude model)
+
+**Question.** In the wider event population, is the high-attention indicator associated with a larger
+absolute move once inference accounts for repeated tickers?
+
+**Design.** Regression of absolute day return on the high-attention indicator over the full usable
+event population, not the matched subset.
+**Estimand.** Coefficient on the high-attention indicator, percentage points.
+**Inference.** CR2 clustered on ticker with Satterthwaite df — the same inference family as 4A.1 but
+a different sample and estimand, which is why the two estimates are not expected to coincide and
+must not be averaged or presented as replications of each other.
+
+**Designated primary.** `primary_magnitude_abs_day_return` was designated the primary specification
+in advance. Two other specifications exist in the same artifact and are reported in Section 5.2 as
+labelled sensitivities only.
+
+### 4A.3 Out-of-sample forecasting (Level 2)
+
+**Question.** Does adding attention features to a strong baseline reduce forecast error on data the
+model has not seen?
+
+**Design.** Nested comparison of a price-and-calendar baseline (B) against the same baseline plus
+attention features (C), evaluated out of sample.
+**Estimand.** Pooled mean absolute error in percentage points, and the paired loss difference
+between C and B.
+**Inference.** Paired test on the loss difference, clustered.
+**Decision rule, prespecified.** The comparison is decided on the paired loss difference, not on
+whichever model happens to look better on a secondary metric.
+
+**Why this is the decisive level.** A variable can be associated with an outcome and still fail here,
+because association is measured in-sample against no competitor while forecasting is measured out of
+sample against a baseline that already contains the easy information.
+
+### 4A.4 Trading evaluation (Level 3)
+
+**Question.** Does an implementable strategy using attention earn a return that attention itself
+explains?
+
+**Design.** An event strategy selecting earnings events with an attention filter, evaluated net, and
+then the decisive test: the incremental contribution attributable to high attention once a baseline
+containing price and calendar information is already present.
+**Estimand.** Mean net return per event for the standalone figure; coefficient attributable to high
+attention, in percentage points, for the incremental figure.
+**Inference.** CR2 clustered on ticker with Satterthwaite df.
+
+**Why the standalone figure is not the answer.** Selecting earnings events selects post-earnings
+drift, which exists whether or not anyone is searching. Only the incremental coefficient isolates
+attention's contribution.
+
+---
+
 ## 5. Search-attention results
 
 We report the load-bearing evidence rather than every exploratory branch, and we do not claim that
@@ -273,14 +353,53 @@ High-attention earnings events are more active than comparable earnings events. 
 matched-population analysis, the **mean paired difference in absolute move was +2.0797 percentage
 points**, with **p = 0.00397**. The result is not fragile:
 
-| Specification | Estimate | p |
-|---|---|---|
-| **Primary — mean paired difference** | **+2.0797 pp** | **0.00397** |
-| Sensitivity A — reuse retained, self-match excluded | +1.9591 pp | 0.05125 |
-| Sensitivity B — unpaired Welch on corrected arms (treated 8.0286% vs control 5.9489%) | +2.0797 pp | 0.02014 |
-| Sensitivity C — leave-one-ticker-out, 26 refits | +1.8343 to +2.3772 pp | — |
+**Table 2. Matched Level-1 association: primary estimate and all four sensitivities.** Estimand is
+the ATT on |day return| in percentage points. Inference is CR2 (BRL) clustered on ticker with
+coefficient-specific Satterthwaite degrees of freedom, except sensitivity B which is an unpaired
+Welch test by construction.
 
-Source: `Correction_Overlays/2026-08-22_C5_Control_Matching/CORRECTED_RESULTS_v1.0.json`.
+| Specification | n pairs | Estimate (pp) | SE (pp) | df | t | p | 95% CI (pp) | Status |
+|---|---|---|---|---|---|---|---|---|
+| **Primary — mean paired difference** | **73** | **+2.0797** | **0.638** | **19.742** | **3.260** | **0.00397** | **[+0.7479, +3.4116]** | **PRIMARY** |
+| Sensitivity A — reuse retained, self-match excluded | 113 | +1.9591 | 0.9254 | 15.118 | 2.117 | 0.05125 | [−0.0120, +3.9302] | sensitivity |
+| Sensitivity B — unpaired Welch on corrected arms (treated 8.0286%, n = 73; control 5.9489%, n = 73) | 73 v 73 | +2.0797 | — | 138.58 | 2.351 | 0.02014 | not reported in artifact | sensitivity |
+| Sensitivity C — leave-one-ticker-out | 73 | +1.8343 to +2.3772 (range over 26 refits) | — | — | — | — | — | sensitivity |
+| Sensitivity D — excluding the 8 overlap identities | 65 | +2.5682 | 0.6347 | 18.128 | 4.046 | 0.00075 | [+1.2354, +3.9009] | sensitivity |
+
+Source: `Correction_Overlays/2026-08-22_C5_Control_Matching/CORRECTED_RESULTS_v1.0.json`. Fields
+marked "—" or "not reported" are genuinely absent from the artifact and were **not** computed for
+this manuscript.
+
+**Sensitivity D, stated explicitly because it is the most favourable number in the family.**
+Sensitivity D is a **sensitivity analysis, not the primary estimate.** It excludes the eight
+identities that are *both* self-matched and reused — LDOS 2021-08-03, LDOS 2023-10-31,
+NFLX 2022-01-20, NFLX 2023-01-19, NKE 2024-03-21, QCOM 2025-02-05, SBUX 2025-01-28, STZ 2025-01-10
+— which the frozen corrective design names individually because "the two defects overlap … They must
+not be counted twice when sizing the correction." Removing them leaves 65 pairs and produces the
+largest point estimate (+2.5682 pp) and the smallest p-value (0.00075) of any specification here.
+
+**That is exactly why it is not promoted.** Reporting the tightest of five specifications as the
+headline would be the specification shopping this paper exists to document. The primary estimate
+remains **+2.0797 pp at p = 0.00397**, and D is disclosed so a reader can see the full range rather
+than discover it later. D is a **Level-1 association on a restricted matched subset**; it is not
+incremental prediction, not causal evidence, and not alpha.
+
+**A restriction, not a re-match.** The overlay records its own scope limit verbatim: *"Restriction of
+the committed matched set, not a re-match; the control candidate pool is not committed."* Every
+sensitivity above, D included, re-uses the committed matched set rather than re-running the matching
+procedure, so none of them can repair a matching decision — only test the surviving set's
+sensitivity to it.
+
+**One design-versus-result discrepancy, recorded rather than smoothed.** The frozen corrective design
+specifies leave-one-ticker-out over **28** refits; the committed results report **26** refits and 26
+entries in `by_excluded_ticker`. We report the realised 26 and flag the difference; we did not
+recompute anything to reconcile it.
+
+**Balance.** The overlay also reports balance diagnostics on the surviving set (sensitivity E):
+mean |pre-drift| 3.619 pp treated versus 2.9662 pp control, 72 same-ticker pairs, 73 BMO/AMC
+concordant pairs, and the treated/control calendar-year distributions. Treated events carry
+noticeably more pre-event drift than controls, which is a limitation of the match rather than a
+result, and we treat it as such in Section 11.
 
 **What this is.** A retrospective, matched, **Level-1 association** between search attention and how
 much a stock moves around its earnings announcement. The comparison is against *matched earnings
@@ -298,6 +417,12 @@ carries `citation_status = SUPERSEDED_BY_THIS_ARTIFACT`. The superseded value is
 manuscript for history only (Appendix A) and is not the current estimate. The correction overlay
 itself is labelled `RETROSPECTIVE_DEVELOPMENT_ONLY_NOT_HYP01_CONFIRMATION`.
 
+**Sample attrition under the correction.** The original matched set held 133 pairs. Correction
+dropped 20 self-matched pairs (defect E1) and 40 pairs with no unique control (defect E2), leaving
+**73 surviving pairs** with 73 distinct treated and 73 distinct control identities — a loss of 60
+observations from the original treated arm. The corrected estimate is therefore both larger and
+built on less than half the original pairs, and both facts belong together whenever it is cited.
+
 ### 5.2 Primary clustered magnitude model
 
 The primary inferential specification regresses the absolute day return on the high-attention
@@ -310,11 +435,20 @@ indicator with ticker-clustered CR2 standard errors and Satterthwaite degrees of
 describe it as *suggestive but unsupported*, and we do not describe it as significant, marginal,
 trending, or approaching significance.
 
-A benchmark-adjusted variant of the same specification — absolute excess return versus SPY — gives
-+1.5388 pp at p = 0.03707. **We do not promote it.** It is a secondary metric, the primary gate was
-designated in advance, and reporting the significant variant as the headline would be exactly the
-specification-shopping this paper argues against. It is recorded here for completeness and nowhere
-else.
+Two other specifications in the same artifact reach significance. **Neither is promoted, and both
+are recorded here only as labelled sensitivities:**
+
+| Specification | Estimate | p | Status |
+|---|---|---|---|
+| **`primary_magnitude_abs_day_return`** | **+1.509 pp** | **0.0662** | **PRIMARY — designated in advance** |
+| `magnitude_abs_excess_vs_spy` (benchmark-adjusted) | +1.5388 pp | 0.03707 | sensitivity |
+| `repeated_control_sensitivity.deduplicated_cr2` (deduplicated) | — | 0.00193 | sensitivity |
+
+The primary gate was designated before these were compared. Reporting whichever variant clears 5% as
+the headline would be exactly the specification shopping this paper argues against, and the
+significance of a benchmark-adjusted or deduplicated variant does not transfer to the primary
+estimand. All three are Level-1 association measures; **none of them is incremental prediction**, and
+no combination of them changes the null results in Sections 5.4 and 5.5.
 
 ### 5.3 Standalone profitability is not attention alpha
 
@@ -514,6 +648,38 @@ No new score, ranking, or aggregate is computed from this table.
 
 ## 10. Discussion
 
+### 10.0 Why a detectable association coexists with null incremental prediction
+
+The central result of this paper looks paradoxical only until the three levels are held apart. A
+matched association of +2.0797 pp at p = 0.00397 is a real, statistically detectable difference. An
+incremental contribution of +0.0131 pp at p = 0.98332 is an unambiguous null. Both come from the
+same variable on overlapping data. Four reasons they are consistent:
+
+**1. The comparison groups differ.** The association contrasts high-attention earnings events with
+*matched earnings events*. The incremental test contrasts a baseline *already containing price and
+calendar information* with that same baseline plus attention. If the information attention carries is
+also carried by the baseline, attention can differ across groups and still add nothing on top.
+
+**2. In-sample association faces no competitor; out-of-sample prediction faces a strong one.**
+Association asks whether a difference exists. Incremental prediction asks whether a variable earns
+its place beside features that already work. The second is strictly harder, and most variables that
+clear the first fail the second.
+
+**3. Selection is not forecasting.** Attention identifies *which* periods are unusually active. That
+is genuinely useful for describing when information arrives — and it is orthogonal to predicting the
+*size* of a move before it happens. Our out-of-sample magnitude errors (3.6299 with attention versus
+3.6284 without) say the second thing directly.
+
+**4. Magnitude without direction is not tradable.** Even a perfect absolute-move forecast does not
+determine position sign, and our direction model was worse calibrated than assuming the base rate.
+
+**What follows, and what does not.** The corrected matched association does **not** overturn the null
+incremental findings, and the nulls do **not** invalidate the association. They are answers to
+different questions, and this paper's contribution is largely the discipline of keeping them apart.
+Nothing here licenses a causal reading: the matched design controls for what it matched on and no
+more, the data are observational, and the analysis is retrospective.
+
+
 **Why a variable can explain a reaction yet fail to forecast it.** The initial-reaction studies
 regress a same-session outcome on a variable released just before that session. That is close to a
 *contemporaneous* relationship: surprise and reaction are two views of one event. Forecasting is a
@@ -558,31 +724,38 @@ underlying association intact.
 
 ## 11. Limitations
 
-These are material and we state them prominently.
+**Retrospective selection.** Every result in this paper was produced after the data existed. Analyses
+were chosen, refined, and in one case corrected with the outcomes visible. Nothing here was
+preregistered, and no result should be read with the confidence a prespecified test would earn.
 
-1. **This is a set of connected exploratory studies, not one preregistered experiment.** Designs
-   were frozen before their own designated runs, but the program as a whole evolved.
-2. **This synthesis is not preregistered.** It was written after the results were known.
-3. **Some controls were reactive, introduced only after defects were discovered** — above all
-   **event-identity deduplication** and the **strictly earlier lag-feature repair**. What was frozen
-   in advance, per designated study, was the model specification, the primary metric, the decision
-   gates and the temporal-replication rules, each committed before that study's designated outcomes
-   were opened. That is narrower than saying the program was prespecified.
-4. **Selected company universes.** Ten semiconductor firms; sector-specific pilots elsewhere.
-   Findings need not generalise.
-5. **Vendor-defined, retrospectively restated EPS**, not SEC-validated GAAP EPS.
-6. **No guaranteed point-in-time estimate vintage.** The largest single threat to interpreting even
-   the significant association.
-7. **Limited cluster counts.** Nine to ten firms is few for clustered inference.
-8. **Daily rather than intraday execution** in several studies; intraday releases were excluded
-   because daily bars cannot isolate them.
-9. **No historical options baseline**, so we cannot say whether options markets already priced these
-   moves.
-10. **No live capital was deployed** and no prospective result exists.
-11. **We make no claim of universal market efficiency.** We tested specific signals, on specific
-    universes, over specific windows, with specific models.
+**Multiple development analyses.** Many specifications were run over the life of this program. We
+report the load-bearing ones and label sensitivities as sensitivities, but we cannot compute an
+honest multiplicity correction across an exploratory development process, and we do not pretend to.
+The five matched-association specifications in Table 2 span +1.8343 to +2.5682 pp with p-values from
+0.00075 to 0.05125; that spread is itself the relevant caution.
 
----
+**Matching assumptions.** The matched analysis is a *restriction of a committed matched set, not a
+re-match* — the control candidate pool is not committed, so the matching cannot be reproduced or
+improved from the artifacts. Correction cost 60 of the original treated observations, leaving 73
+pairs. Balance is imperfect: treated events carry mean |pre-drift| of 3.619 pp against 2.9662 pp for
+controls, so some of the measured difference may reflect pre-event activity the match did not remove.
+
+**Ticker clustering and small effective samples.** Inference clusters on ticker with 25–26 clusters
+and Satterthwaite degrees of freedom between 15.1 and 19.7 — well below the nominal cluster count.
+Small-cluster inference is fragile, and the reported intervals should be read as approximate.
+
+**Google Trends normalisation.** The attention measure is a normalised, sampled index rather than a
+raw count. It is rescaled per query and window, may be redrawn differently on re-request, and its
+query strings are ambiguous between a firm and its products. Section 4.1 covers this; it bounds how
+precisely any attention coefficient can be interpreted.
+
+**Estimate vintage.** Results were produced at different times under different code. The matched
+association carries an August 2022 correction; the clustered models and forecasting results predate
+it. We have not re-run earlier analyses under later code, so vintage differences remain.
+
+**Generalisability.** A locked universe of large-capitalisation United States equities over a limited
+window, with attention measured by one vendor's index. Nothing here establishes that the association
+holds for other universes, periods, attention measures, or market regimes.
 
 ## 12. Conclusion
 
@@ -621,6 +794,26 @@ better-identified but still unstable 2010–2017 one.
 contribution of this work is not a signal. It is a reasonably careful map of where explanatory
 signal stops becoming predictive strategy — and a demonstration that the boundary sits earlier, and
 is easier to cross accidentally, than intuition suggests.
+
+---
+
+## 13. Future work
+
+**A prospective confirmatory study exists and has produced no results.** A separate preregistered
+protocol (internally "HYP-01") is designed to test, prospectively, whether the Level-1 association
+reported here survives as a confirmatory finding. As of this version it has produced **no results of
+any kind**: no eligible observation has been collected, no outcome has been analysed, and outstanding
+methodological decisions remain open in its own governing record.
+
+It contributes **no evidence** to this manuscript. Nothing in this paper should be read as
+anticipating, previewing, or partially reporting its outcome, and no number in this paper comes from
+it. Whether the association replicates prospectively is precisely the open question, and this paper
+does not answer it.
+
+**What would strengthen the retrospective record**, independent of that protocol: a committed control
+candidate pool so the matching can be reproduced rather than only restricted; a reproducible
+in-repository size study for the clustered inference; and replication of the attention measure under
+an independently sourced attention proxy.
 
 ---
 
