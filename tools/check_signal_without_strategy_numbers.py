@@ -26,7 +26,13 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-MANUSCRIPT = ROOT / "SIGNAL_WITHOUT_STRATEGY_MANUSCRIPT_v1.0.md"
+_M11 = ROOT / "SIGNAL_WITHOUT_STRATEGY_MANUSCRIPT_v1.1_DRAFT.md"
+_M10 = ROOT / "SIGNAL_WITHOUT_STRATEGY_MANUSCRIPT_v1.0.md"
+# v1.1 supersedes v1.0 when present; v1.0 stays auditable on branches without it.
+MANUSCRIPT = _M11 if _M11.exists() else _M10
+OVERLAY_PATH = ("Correction_Overlays/2026-08-22_C5_Control_Matching/"
+                "CORRECTED_RESULTS_v1.0.json")
+MECHSTAB_PATH = "Live Signal Engine/MechanismStability_Results.csv"
 SUMMARY = ROOT / "SIGNAL_WITHOUT_STRATEGY_EXECUTIVE_SUMMARY_v1.0.md"
 FIGURES = sorted(ROOT.glob("SIGNAL_WITHOUT_STRATEGY_FIGURE_*.svg"))
 MISMATCH_REV = "ddc848865bd79a8aecb782dacbb11082b83a25b9"
@@ -128,7 +134,30 @@ A = {
     "pr34": jload("SEMICONDUCTOR_SURPRISE_ABSORPTION_V3_RESULTS_v1.0.json"),
     "pr35": jload("SEMICONDUCTOR_SURPRISE_TEMPORAL_REPLICATION_RESULTS_v1.0.json"),
     "mismatch": load_mismatch_artifact(),
+    # 2026-08-27 (v1.1): corrected matched-control overlay is authoritative for
+    # the Level-1 association and SUPERSEDES Q1_abs_move_high_vs_control.
+    "overlay": jload(OVERLAY_PATH),
 }
+
+
+def load_mechstab():
+    """full_sample row of the mechanism-stability CSV. Appendix A.3 only -- an
+    UNMATCHED spike-vs-random-week comparison, deliberately NOT the Level-1
+    estimate."""
+    import csv as _csv
+    fp = ROOT / MECHSTAB_PATH
+    if not fp.exists():
+        bad("missing artifact: " + MECHSTAB_PATH)
+        return {}
+    with fp.open(encoding="utf-8", newline="") as fh:
+        for row in _csv.DictReader(fh):
+            if row.get("scenario") == "full_sample":
+                return row
+    bad(MECHSTAB_PATH + ": no full_sample row")
+    return {}
+
+
+MECH = load_mechstab()
 DIRTXT = (ROOT / DIR_REPORT).read_text(encoding="utf-8")
 
 
@@ -147,6 +176,88 @@ def C(desc, value, scale=1.0):
 
 
 CLAIMS = {
+    # ---- v1.1 Level-1 matched association (OVERLAY, authoritative) -----------
+    "+2.0797": C("overlay: primary.mean_paired_difference_pp",
+                 dig(A["overlay"], "primary.mean_paired_difference_pp")),
+    "2.0797": C("overlay: primary.mean_paired_difference_pp",
+                dig(A["overlay"], "primary.mean_paired_difference_pp")),
+    "0.00397": C("overlay: primary.inference.p_value",
+                 dig(A["overlay"], "primary.inference.p_value")),
+    "+1.9591": C("overlay: sensitivity.a.coef_pp",
+                 dig(A["overlay"], "sensitivity.a_reuse_retained_self_match_excluded.coef_pp")),
+    "1.9591": C("overlay: sensitivity.a.coef_pp",
+                dig(A["overlay"], "sensitivity.a_reuse_retained_self_match_excluded.coef_pp")),
+    "0.05125": C("overlay: sensitivity.a.p_value",
+                 dig(A["overlay"], "sensitivity.a_reuse_retained_self_match_excluded.p_value")),
+    "8.0286": C("overlay: sensitivity.b.mean_treated_pp",
+                dig(A["overlay"], "sensitivity.b_unpaired_welch_on_corrected_arms.mean_treated_pp")),
+    "5.9489": C("overlay: sensitivity.b.mean_control_pp",
+                dig(A["overlay"], "sensitivity.b_unpaired_welch_on_corrected_arms.mean_control_pp")),
+    "0.02014": C("overlay: sensitivity.b.p_value",
+                 dig(A["overlay"], "sensitivity.b_unpaired_welch_on_corrected_arms.p_value")),
+    "+1.8343": C("overlay: sensitivity.c.min",
+                 dig(A["overlay"], "sensitivity.c_leave_one_ticker_out_mean_paired_diff_pp.min")),
+    "1.8343": C("overlay: sensitivity.c.min",
+                dig(A["overlay"], "sensitivity.c_leave_one_ticker_out_mean_paired_diff_pp.min")),
+    "+2.3772": C("overlay: sensitivity.c.max",
+                 dig(A["overlay"], "sensitivity.c_leave_one_ticker_out_mean_paired_diff_pp.max")),
+    "2.3772": C("overlay: sensitivity.c.max",
+                dig(A["overlay"], "sensitivity.c_leave_one_ticker_out_mean_paired_diff_pp.max")),
+    # ---- v1.1 primary clustered magnitude model (PRIMARY gate) ---------------
+    "+1.509": C("market: primary_magnitude_abs_day_return.coef_pp",
+                dig(A["market"], "clustered_inference.primary_magnitude_abs_day_return.coef_pp")),
+    "1.509": C("market: primary_magnitude_abs_day_return.coef_pp",
+               dig(A["market"], "clustered_inference.primary_magnitude_abs_day_return.coef_pp")),
+    "0.766": C("market: primary.cr2_se_pp (3dp)",
+               round(dig(A["market"], "clustered_inference.primary_magnitude_abs_day_return.cr2_se_pp"), 3)),
+    "16.3": C("market: primary.satterthwaite_df (1dp)",
+              round(dig(A["market"], "clustered_inference.primary_magnitude_abs_day_return.satterthwaite_df"), 1)),
+    "0.0662": C("market: primary.p_value",
+                dig(A["market"], "clustered_inference.primary_magnitude_abs_day_return.p_value")),
+    "-0.113": C("market: primary.ci95_pp[0] (3dp)",
+                round(dig(A["market"], "clustered_inference.primary_magnitude_abs_day_return.ci95_pp.0"), 3)),
+    "+3.131": C("market: primary.ci95_pp[1] (3dp)",
+                round(dig(A["market"], "clustered_inference.primary_magnitude_abs_day_return.ci95_pp.1"), 3)),
+    "3.131": C("market: primary.ci95_pp[1] (3dp)",
+               round(dig(A["market"], "clustered_inference.primary_magnitude_abs_day_return.ci95_pp.1"), 3)),
+    "+1.5388": C("market: magnitude_abs_excess_vs_spy.coef_pp (SECONDARY, not promoted)",
+                 dig(A["market"], "clustered_inference.magnitude_abs_excess_vs_spy.coef_pp")),
+    "0.03707": C("market: magnitude_abs_excess_vs_spy.p_value (SECONDARY, not promoted)",
+                 dig(A["market"], "clustered_inference.magnitude_abs_excess_vs_spy.p_value")),
+    # ---- v1.1 superseded Q1, Appendix A.2 only ------------------------------
+    "7.8871": C("market: Q1.high_mean_abs_pct (SUPERSEDED)",
+                dig(A["market"], "Q1_abs_move_high_vs_control.high_mean_abs_pct")),
+    "6.4459": C("market: Q1.control_mean_abs_pct (SUPERSEDED)",
+                dig(A["market"], "Q1_abs_move_high_vs_control.control_mean_abs_pct")),
+    "+1.4411": C("market: Q1.difference_pp (SUPERSEDED)",
+                 dig(A["market"], "Q1_abs_move_high_vs_control.difference_pp")),
+    "1.4411": C("market: Q1.difference_pp (SUPERSEDED)",
+                dig(A["market"], "Q1_abs_move_high_vs_control.difference_pp")),
+    "2.138": C("market: Q1.t_stat (SUPERSEDED)",
+               dig(A["market"], "Q1_abs_move_high_vs_control.t_stat")),
+    # ---- v1.1 Appendix A.3 mechanism stability (UNMATCHED, non-headline) -----
+    "7.72": C("mechstab: full_sample.spike_mean_move_pct (Appendix A.3)",
+              float(MECH.get("spike_mean_move_pct", "nan"))),
+    "3.72": C("mechstab: full_sample.baseline_mean_move_pct (Appendix A.3)",
+              float(MECH.get("baseline_mean_move_pct", "nan"))),
+    "1.294": C("mechstab: full_sample.cohens_d (Appendix A.3)",
+               float(MECH.get("cohens_d", "nan"))),
+    "1275": C("mechstab: full_sample.n_baseline (Appendix A.3)",
+              float(MECH.get("n_baseline", "nan"))),
+    "6.63": C("mechstab: full_sample.spike_median_move_pct (Appendix A.3)",
+              float(MECH.get("spike_median_move_pct", "nan"))),
+    "3.03": C("mechstab: full_sample.baseline_median_move_pct (Appendix A.3)",
+              float(MECH.get("baseline_median_move_pct", "nan"))),
+    "0.113": C("market: |primary.ci95_pp[0]| (3dp, Unicode-minus form)",
+               abs(round(dig(A["market"], "clustered_inference."
+                              "primary_magnitude_abs_day_return.ci95_pp.0"), 3))),
+    "152": C("market: Q1.n_high (SUPERSEDED block, Appendix A.2)",
+             dig(A["market"], "Q1_abs_move_high_vs_control.n_high")),
+    "133": C("market: Q1.n_control (SUPERSEDED block, Appendix A.2)",
+             dig(A["market"], "Q1_abs_move_high_vs_control.n_control")),
+    "26": C("overlay: sensitivity.c.n_refits",
+            dig(A["overlay"], "sensitivity."
+                 "c_leave_one_ticker_out_mean_paired_diff_pp.n_refits")),
     # ---- search attention: standalone vs incremental -------------------------
     "0.8543": C("market: scorecard[3] (Strategy E) mean_net_pct",
                 dig(A["market"], "scorecard.3.mean_net_pct")),
@@ -343,6 +454,13 @@ ALLOW = {
                            "2011", "2012", "2014", "2016", "2017", "2023", "2024",
                            "2025", "2004", "2007")},
     "1.0": "artifact version",
+    "1.1": "manuscript version (v1.1)",
+    "2026": "year (revision date 2026-08-27, overlay date 2026-08-22)",
+    "08": "ISO month component of a revision/overlay date",
+    "22": "ISO day component of the 2026-08-22 correction overlay",
+    "27": "ISO day component of the 2026-08-27 revision date",
+    "336": "abstract word count",
+    "5.8": "subsection number (v1.1 adds 5.1/5.2 and shifts the tail)",
     "231": "declared abstract word count",
     "0.5": "AUC chance level (definition)",
     "100": "Google Trends index maximum (definition)",
