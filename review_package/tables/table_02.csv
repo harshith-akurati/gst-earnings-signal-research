@@ -1,0 +1,6 @@
+Specification,n pairs,Estimate (pp),SE (pp),df,t,p,95% CI (pp),Status
+**Primary — mean paired difference**,**73**,**+2.0797**,**0.638**,**19.742**,**3.260**,**0.00397**,"**[+0.7479, +3.4116]**",**PRIMARY**
+"Sensitivity A — reuse retained, self-match excluded",113,+1.9591,0.9254,15.118,2.117,0.05125,"[−0.0120, +3.9302]",sensitivity
+"Sensitivity B — unpaired Welch on corrected arms (treated 8.0286%, n = 73; control 5.9489%, n = 73)",73 v 73,+2.0797,—,138.58,2.351,0.02014,not reported in artifact,sensitivity
+Sensitivity C — leave-one-ticker-out,73,+1.8343 to +2.3772 (range over 26 refits),—,—,—,—,—,sensitivity
+Sensitivity D — excluding the 8 overlap identities,65,+2.5682,0.6347,18.128,4.046,0.00075,"[+1.2354, +3.9009]",sensitivity

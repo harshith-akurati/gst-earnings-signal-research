@@ -1,0 +1,4 @@
+Level,Claim,Minimum evidence required,Typical failure mode
+1. Association,The variable moves with the outcome,A dependence measure with an honest interval; no look-ahead in construction,Contemporaneous or post-hoc measurement
+2. Incremental prediction,It improves a proper OOS forecast,"Chronological validation, a strong baseline, a prespecified loss, an uncertainty interval, stability across periods",Weak baseline; in-sample tuning; leakage
+3. Tradability,The forecast is implementable,Signal observable before entry; explicit entry/exit; costs deducted; clustered inference,Ignoring timing; ignoring costs; overfitting the backtest

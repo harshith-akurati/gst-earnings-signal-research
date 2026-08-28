@@ -1,0 +1,6 @@
+Quantity,Value,Source
+Spike mean absolute move,7.72% (n = 147),"`MechanismStability_Results.csv`, `full_sample` row"
+Random-baseline mean absolute move,"3.72% (n = 1,275)",same row
+Difference,4.0 points,same row
+Cohen's d,1.294,same row
+Permutation p,"< 0.0001 (0 of 10,000 permutations)",`STRATEGY_SPEC_v1.0_TERMINOLOGY.md` §3

@@ -24,9 +24,17 @@ high-attention events moved **+2.0797 percentage points** more in absolute terms
 controls (mean paired difference, **p = 0.00397**), a result stable across leave-one-ticker-out
 refits (**+1.8343 to +2.3772 pp** across 26 refits). This is an association between attention and
 *event activity*, established retrospectively on a matched population; it is not evidence of
-prediction. The primary clustered magnitude model gave **+1.509 pp** with a CR2 standard error of
-**0.766** on **16.3** Satterthwaite degrees of freedom, **p = 0.0662**, 95% CI **[−0.113, +3.131]** —
-suggestive, spanning zero, and not statistically supported at the 5% level.
+prediction.
+
+**A second, separate specification** — a ticker-clustered regression over the full usable event
+population rather than the matched pairs — gave **+1.509 pp** with a CR2 standard error of
+**0.766** on **16.3** Satterthwaite degrees of freedom, **p = 0.0662**, 95% CI
+**[−0.113, +3.131]**: suggestive, spanning zero, and not statistically supported at the 5% level.
+**These two estimates come from different specifications on different samples with different
+estimands; they are not contradictory versions of one number.** The matched comparison estimates an
+average treatment effect on the treated across 73 matched pairs; the clustered regression estimates
+a population coefficient. Both are Level-1 association measures, and neither is expected to
+reproduce the other.
 
 Every incremental test was null. Against a strong price-and-calendar baseline, attention's marginal
 contribution was **+0.0131 pp** with **p = 0.98332**. Out-of-sample magnitude error was **3.6299**
@@ -36,7 +44,7 @@ worse calibrated than an intercept-only baseline (Brier **0.2711** versus **0.25
 post-earnings drift was present without the attention filter, so that return is not an attention
 result.
 
-Earnings surprise behaved differently, showing a genuine positive association with the initial price
+Earnings surprise behaved differently, showing a positive association with the initial price
 reaction (Spearman **+0.2169**, **p = 0.000236**, 283 out-of-sample events) that nonetheless improved
 forecast error in only five of eight years and four of nine firms, with a bootstrap interval
 including zero. We also report a leakage episode in which duplicated events and a mis-specified lag
