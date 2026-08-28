@@ -230,44 +230,58 @@ def join_event(registration: dict, gst_leg: dict | None, d1_leg: dict | None) ->
 
 def classify(registration: dict, joined: dict | None,
              refusal: JoinRefusal | None) -> tuple[bool, str | None]:
-    """Apply the ladder to one event. Returns (eligible, reason_or_None).
+    """Apply the registered ladder to one event. Returns (eligible, reason).
 
-    Steps 1-7 only. Step 8 (rank <= 60) is a property of the ordered set and is
-    applied by the driver, not per event.
+    THE ORDER HERE IS THE REGISTERED ORDER AND MAY NOT BE REARRANGED.
+    S-1..S-8 are fixed by GST_HYP01_ELIGIBILITY_AND_FREEZE_RULES_v1.0.md section 1
+    and, identically, by GST_HYP01_ANALYSIS_LOCK_v1.0.json
+    /sample/inclusion_conditions[0..7]. Both artifacts place the BMO/AMC session
+    check at S-7, AFTER the completeness and provenance gates.
+
+    Reordering the gates would leave the eligible SET unchanged, because an event
+    must pass every gate to be eligible. It would NOT leave the audit record
+    unchanged: the disposition assigned to a multi-failure event is the code of
+    the FIRST gate it fails, so the order determines the exclusion reason. First-
+    failure attribution is part of the audit trail (section 1: "Every disposition
+    is recorded"), so the registered sequence is implemented literally.
+
+    S-8 (rank <= 60) is a property of the ordered set, not of one event, and is
+    applied by the driver.
     """
-    # Step 1 -- enrolled under cohort protocol v1.0, human verified.
+    # --- S-1: enrolled under cohort protocol v1.0 (human verified) -----------
+    # Reads the registration only, so it is evaluable even on a malformed
+    # record set -- and it is the most informative answer when it fails: the
+    # event is not in the study at all.
     if str(registration.get("verification_status", "")).lower() != "verified":
         return False, R_NOT_ENROLLED
     if str(registration.get("row_type", "event")).lower() != "event":
         return False, R_NOT_ENROLLED
 
+    # --- S-2: hypothesis-family gate ----------------------------------------
+    # Also reads the registration only, so it precedes the join refusal for the
+    # same reason S-1 does.
+    if str(registration.get("hypothesis_class", "core_attention_vs_equity_response"))             != "core_attention_vs_equity_response":
+        return False, R_CLASS_INELIGIBLE
+
+    # --- structural refusal --------------------------------------------------
+    # Every remaining gate (S-3..S-7) reads the joined legs. If the record set is
+    # malformed, NO later gate can be evaluated, so the refusal surfaces here --
+    # at the first gate that needs the missing data, not earlier and not later.
+    # A refusal is not a scientific disposition: the event is neither eligible
+    # nor excluded on scientific grounds, and an operator must fix the input.
     if refusal is not None:
-        # A malformed record set is not a scientific disposition. Surface the
-        # join code; the driver tallies it separately and counts nothing.
         return False, refusal.code
     assert joined is not None
 
-    # Step 2 -- hypothesis-family gate.
-    if str(registration.get("hypothesis_class", "core_attention_vs_equity_response")) \
-            != "core_attention_vs_equity_response":
-        return False, R_CLASS_INELIGIBLE
-
-    # Step 7 -- release session. Checked before the outcome gates because an
-    # intraday release is measurement-incompatible regardless of completeness.
-    session = str(joined.get("release_market_session") or "").upper()
-    if session not in VALID_SESSIONS:
-        return False, R_MEASUREMENT_INCOMPATIBLE_INTRADAY
-
-    # Step 3 -- strict core v0.2 over the six panel fields.
-    core = evaluate_strict_core_v0_2(joined["gst"])
-    if not getattr(core, "passed", False):
+    # --- S-3: strict v0.2 core gate over the six panel fields ---------------
+    if not evaluate_strict_core_v0_2(joined["gst"]).passed:
         return False, R_CORE_GATE_FAILED
 
-    # Step 4 -- valid D1 decomposition.
+    # --- S-4: valid D1 decomposition ----------------------------------------
     if not is_valid_d1_decomposition(joined["d1"]):
         return False, R_D1_GATE_FAILED
 
-    # Step 5 -- GST provenance.
+    # --- S-5: gst_zscore non-null with a successful GST source status -------
     if not _present(joined["gst"], "gst_zscore"):
         return False, R_GST_PROVENANCE_FAILED
     if str(joined["gst"].get("source_status_gst", "")) not in GST_OK_STATUSES:
@@ -275,7 +289,7 @@ def classify(registration: dict, joined: dict | None,
     if not provenance_ok(joined["gst"]):
         return False, R_GST_PROVENANCE_FAILED
 
-    # Step 6 -- abs_overnight_gap non-null with valid market-data provenance.
+    # --- S-6: abs_overnight_gap non-null with valid market-data provenance ---
     if not _present(joined["d1"], "abs_overnight_gap"):
         return False, R_OUTCOME_MISSING
     if joined["d1"].get("market_data_provenance_valid") is not True:
@@ -283,7 +297,27 @@ def classify(registration: dict, joined: dict | None,
     if not provenance_ok(joined["d1"]):
         return False, R_OUTCOME_MISSING
 
+    # --- S-7: release session in {BMO, AMC} ---------------------------------
+    session = str(joined.get("release_market_session") or "").upper()
+    if session not in VALID_SESSIONS:
+        return False, R_MEASUREMENT_INCOMPATIBLE_INTRADAY
+
+    # S-8 is applied by the driver over the ordered candidate set.
     return True, None
+
+
+# The registered sequence, exposed so a test can assert the implementation
+# matches the artifacts rather than trusting the comments above.
+REGISTERED_GATE_ORDER = (
+    ("S-1", R_NOT_ENROLLED),
+    ("S-2", R_CLASS_INELIGIBLE),
+    ("S-3", R_CORE_GATE_FAILED),
+    ("S-4", R_D1_GATE_FAILED),
+    ("S-5", R_GST_PROVENANCE_FAILED),
+    ("S-6", R_OUTCOME_MISSING),
+    ("S-7", R_MEASUREMENT_INCOMPATIBLE_INTRADAY),
+    ("S-8", R_EXTENSION_COHORT),
+)
 
 
 def _sort_key(rec: dict) -> tuple:

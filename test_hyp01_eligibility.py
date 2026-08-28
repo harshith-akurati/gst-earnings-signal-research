@@ -327,6 +327,187 @@ def main() -> int:
           s75["schema"] == "GST_HYP01_ELIGIBILITY_STATUS_v1"
           and s75["binding_target"] == 60)
 
+    print("\n=== E. first-failure precedence under the registered order ===")
+
+    # The registered sequence is S-1..S-8 (eligibility rules section 1 table, and
+    # identically the analysis lock /sample/inclusion_conditions[0..7]). An event
+    # failing several gates must receive the code of the FIRST one it fails.
+    # These fixtures each break two or more gates at once and assert the earlier
+    # code wins -- which is exactly what a reordered implementation would break.
+
+    # -- the two leg-absence cases named in the correction request -------------
+    s = one(reg(1), None, d1(1, session="INTRADAY"))
+    check("E1. timing + missing GST leg -> MISSING_GST_LEG, not the timing code",
+          sole_reason(s) == E.J_MISSING_GST_LEG, sole_reason(s))
+
+    s = one(reg(1), gst(1), None)
+    check("E2. timing + missing D1 leg -> MISSING_D1_LEG (session is unknowable "
+          "without the D1 leg that carries it)",
+          sole_reason(s) == E.J_MISSING_D1_LEG, sole_reason(s))
+
+    # -- provenance vs completeness ------------------------------------------
+    s = one(reg(1), gst(1, provenance_sha256="short"), d1(1, open_to_30m=_DROP))
+    check("E3. S-4 completeness + S-5 provenance -> D1_GATE_FAILED",
+          sole_reason(s) == E.R_D1_GATE_FAILED, sole_reason(s))
+
+    s = one(reg(1), gst(1, wiki_zscore=_DROP, provenance_sha256="short"), d1(1))
+    check("E4. S-3 core completeness + S-5 provenance -> CORE_GATE_FAILED",
+          sole_reason(s) == E.R_CORE_GATE_FAILED, sole_reason(s))
+
+    # -- duplicates outrank everything ---------------------------------------
+    try:
+        E.run_driver([reg(1, status="pending"), reg(1)],
+                     [gst(1, wiki_zscore=_DROP)], [d1(1, session="INTRADAY")])
+        ok = False
+    except E.JoinRefusal as e:
+        ok = e.code == E.J_DUPLICATE_EVENT
+    check("E5. duplicate event + three other failures -> DUPLICATE_EVENT raises", ok)
+
+    try:
+        E.run_driver([reg(1)], [gst(1), gst(1, wiki_zscore=_DROP)],
+                     [d1(1, session="INTRADAY")])
+        ok = False
+    except E.JoinRefusal as e:
+        ok = e.code == E.J_DUPLICATE_LEG
+    check("E6. duplicate leg + other failures -> DUPLICATE_LEG raises", ok)
+
+    # -- every adjacent pair of ordered gates where simultaneous failure is
+    #    possible. Each fixture breaks gate N and gate N+1; gate N must win.
+    s = one(reg(1, status="pending", hclass="options_implied_move"), gst(1), d1(1))
+    check("E7. S-1 + S-2 -> NOT_ENROLLED", sole_reason(s) == E.R_NOT_ENROLLED,
+          sole_reason(s))
+
+    s = one(reg(1, hclass="options_implied_move"), gst(1, wiki_zscore=_DROP), d1(1))
+    check("E8. S-2 + S-3 -> CLASS_INELIGIBLE", sole_reason(s) == E.R_CLASS_INELIGIBLE,
+          sole_reason(s))
+
+    s = one(reg(1), gst(1, wiki_zscore=_DROP), d1(1, open_to_30m=_DROP))
+    check("E9. S-3 + S-4 -> CORE_GATE_FAILED", sole_reason(s) == E.R_CORE_GATE_FAILED,
+          sole_reason(s))
+
+    # S-5 broken via the provenance digest, which S-3 does not read -- so this
+    # isolates the S-4/S-5 boundary instead of also tripping S-3.
+    s = one(reg(1), gst(1, provenance_sha256="short"), d1(1, thirty_min_to_close=_DROP))
+    check("E10. S-4 + S-5 -> D1_GATE_FAILED", sole_reason(s) == E.R_D1_GATE_FAILED,
+          sole_reason(s))
+
+    s = one(reg(1), gst(1, provenance_sha256="short"), d1(1, abs_overnight_gap=_DROP))
+    check("E11. S-5 + S-6 -> GST_PROVENANCE_FAILED",
+          sole_reason(s) == E.R_GST_PROVENANCE_FAILED, sole_reason(s))
+
+    s = one(reg(1), gst(1), d1(1, abs_overnight_gap=_DROP, session="INTRADAY"))
+    check("E12. S-6 + S-7 -> OUTCOME_MISSING (the case the previous "
+          "implementation mislabelled)",
+          sole_reason(s) == E.R_OUTCOME_MISSING, sole_reason(s))
+
+    # S-7 + S-8: 60 valid events already fill the cohort, so an additional
+    # eligible event would rank 61 and be EXTENSION_COHORT. Being INTRADAY, it
+    # must fail S-7 first instead.
+    regs, gs, ds = cohort(60)
+    regs.append(reg(90))
+    gs.append(gst(90))
+    ds.append(d1(90, session="INTRADAY"))
+    s = E.run_driver(regs, gs, ds)
+    check("E13. S-7 + S-8 -> MEASUREMENT_INCOMPATIBLE_INTRADAY, not EXTENSION_COHORT",
+          s["exclusions_by_reason"]["MEASUREMENT_INCOMPATIBLE_INTRADAY"] == 1
+          and s["exclusions_by_reason"]["EXTENSION_COHORT"] == 0
+          and s["eligible_event_count"] == 60,
+          json.dumps({k: v for k, v in s["exclusions_by_reason"].items() if v}))
+
+    # -- an event failing every gate at once gets the first code ---------------
+    s = one(reg(1, status="pending", hclass="options_implied_move"),
+            gst(1, wiki_zscore=_DROP, provenance_sha256="short"),
+            d1(1, open_to_30m=_DROP, abs_overnight_gap=_DROP, session="INTRADAY"))
+    check("E14. an event failing every gate receives the S-1 code",
+          sole_reason(s) == E.R_NOT_ENROLLED, sole_reason(s))
+
+    # -- the declared order matches actual behaviour, gate by gate ------------
+    # Each fixture breaks exactly one gate; the observed sequence of codes must
+    # equal REGISTERED_GATE_ORDER. This proves the constant describes the code
+    # rather than merely sitting beside it.
+    single = [
+        one(reg(1, status="pending"), gst(1), d1(1)),
+        one(reg(1, hclass="options_implied_move"), gst(1), d1(1)),
+        one(reg(1), gst(1, wiki_zscore=_DROP), d1(1)),
+        one(reg(1), gst(1), d1(1, open_to_30m=_DROP)),
+        one(reg(1), gst(1, provenance_sha256="short"), d1(1)),
+        one(reg(1), gst(1), d1(1, abs_overnight_gap=_DROP)),
+        one(reg(1), gst(1), d1(1, session="INTRADAY")),
+    ]
+    observed = tuple(sole_reason(x) for x in single)
+    expected = tuple(code for _, code in E.REGISTERED_GATE_ORDER[:7])
+    check("E15. observed first-failure codes match the declared S-1..S-7 order",
+          observed == expected, f"{observed} != {expected}")
+
+    s75x = E.run_driver(*cohort(75))
+    check("E16. S-8 is the EXTENSION_COHORT gate, applied by the driver",
+          E.REGISTERED_GATE_ORDER[7] == ("S-8", E.R_EXTENSION_COHORT)
+          and s75x["exclusions_by_reason"]["EXTENSION_COHORT"] == 15)
+
+    print("\n=== F. provenance guarantees ===")
+
+    # The design evaluates provenance on the ladder (S-5/S-6) rather than inside
+    # the join. That is permissible only if a provenance failure can never reach
+    # the cohort by any route. Each property is asserted separately.
+
+    bad_gst = one(reg(1), gst(1, provenance_sha256="short"), d1(1))
+    bad_gst_absent = one(reg(1), gst(1, provenance_path=_DROP), d1(1))
+    bad_d1 = one(reg(1), gst(1), d1(1, provenance_sha256="not-a-digest"))
+
+    check("F1. a GST provenance failure is never marked eligible",
+          bad_gst["eligible_event_ids"] == []
+          and bad_gst_absent["eligible_event_ids"] == [])
+    check("F2. a GST provenance failure does not increment the eligible count",
+          bad_gst["eligible_event_count"] == 0
+          and bad_gst_absent["eligible_event_count"] == 0)
+    check("F3. a D1 provenance failure is never eligible and gets OUTCOME_MISSING",
+          bad_d1["eligible_event_count"] == 0
+          and sole_reason(bad_d1) == E.R_OUTCOME_MISSING, sole_reason(bad_d1))
+    check("F4. a provenance failure receives the registered provenance code",
+          sole_reason(bad_gst) == E.R_GST_PROVENANCE_FAILED
+          and sole_reason(bad_gst_absent) == E.R_GST_PROVENANCE_FAILED,
+          f"{sole_reason(bad_gst)} / {sole_reason(bad_gst_absent)}")
+    check("F5. GST_PROVENANCE_FAILED is reachable through the full driver",
+          bad_gst["exclusions_by_reason"][E.R_GST_PROVENANCE_FAILED] == 1)
+
+    # 59 valid events plus one whose provenance fails must NOT trigger the freeze.
+    regs, gs, ds = cohort(59)
+    regs.append(reg(91))
+    gs.append(gst(91, provenance_sha256="short"))
+    ds.append(d1(91))
+    mixed = E.run_driver(regs, gs, ds)
+    check("F6. a provenance failure cannot contribute to the event-60 freeze",
+          mixed["eligible_event_count"] == 59
+          and mixed["freeze_required"] is False
+          and mixed["counting_state"] == "COUNTING"
+          and mixed["remaining_until_target"] == 1,
+          json.dumps({k: v for k, v in mixed["exclusions_by_reason"].items() if v}))
+    check("F7. no unregistered failure code is emitted anywhere in a mixed cohort",
+          all(r in E.REASONS or r in E.JOIN_REFUSALS
+              for r in mixed["exclusions_by_reason"]),
+          str([r for r in mixed["exclusions_by_reason"]
+               if r not in E.REASONS and r not in E.JOIN_REFUSALS]))
+
+    # The join must not be able to bless an event on its own. Its output carries
+    # identity and provenance only -- no eligibility designation of any kind.
+    joined = E.join_event(reg(1), gst(1, provenance_sha256="short"), d1(1))
+    check("F8. join output carries no eligibility designation to bypass the ladder",
+          not any(k in joined for k in
+                  ("eligible", "is_eligible", "eligibility", "passed", "status")),
+          str(sorted(joined)))
+    ok, why = E.classify(reg(1), joined, None)
+    check("F9. a cleanly-joined but provenance-failed event is refused by the ladder",
+          ok is False and why == E.R_GST_PROVENANCE_FAILED, f"{ok} {why}")
+
+    # Only classify() may admit an event: an event that joins perfectly but fails
+    # a later gate must never appear in the cohort.
+    joinable_but_failing = E.run_driver(
+        [reg(1)], [gst(1)], [d1(1, market_data_provenance_valid=False)])
+    check("F10. a perfectly joinable event failing a ladder gate never enters the cohort",
+          joinable_but_failing["eligible_event_ids"] == []
+          and sole_reason(joinable_but_failing) == E.R_OUTCOME_MISSING,
+          sole_reason(joinable_but_failing))
+
     print(f"\n{CHECKS} checks run")
     if FAILURES:
         print(f"\n{len(FAILURES)} CHECK(S) FAILED:")

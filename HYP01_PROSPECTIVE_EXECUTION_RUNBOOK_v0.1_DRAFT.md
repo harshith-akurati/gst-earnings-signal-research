@@ -46,24 +46,34 @@ sentinel values into every fixture field and assert none of them reaches the out
 
 ## 3. The eligibility ladder
 
-Steps are applied in the order fixed by `GST_HYP01_ELIGIBILITY_AND_FREEZE_RULES_v1.0.md` §1. The
-first step an event fails determines its disposition; each disposition is a registered code.
+Gates are evaluated in the **registered order, S-1 → S-8**, exactly as fixed by
+`GST_HYP01_ELIGIBILITY_AND_FREEZE_RULES_v1.0.md` §1 and, identically, by
+`GST_HYP01_ANALYSIS_LOCK_v1.0.json` `/sample/inclusion_conditions[0..7]`. **This order may not be
+rearranged.**
 
 | Step | Question | Disposition if failed |
 |---|---|---|
-| 1 | Is the event human-verified and enrolled? | `NOT_ENROLLED` |
-| 2 | Is it in the core attention/response family? | `CLASS_INELIGIBLE` |
-| 7 | Is the release BMO or AMC? | `MEASUREMENT_INCOMPATIBLE_INTRADAY` |
-| 3 | Do all six panel fields pass the strict v0.2 core gate? | `CORE_GATE_FAILED` |
-| 4 | Is the D1 decomposition complete? | `D1_GATE_FAILED` |
-| 5 | Is `gst_zscore` present with a successful status and valid provenance? | `GST_PROVENANCE_FAILED` |
-| 6 | Is `abs_overnight_gap` present with valid market-data provenance? | `OUTCOME_MISSING` |
-| 8 | Is it within rank 60 of the frozen order? | `EXTENSION_COHORT` |
+| S-1 | Is the event human-verified and enrolled? | `NOT_ENROLLED` |
+| S-2 | Is it in the core attention/response family? | `CLASS_INELIGIBLE` |
+| S-3 | Do all six panel fields pass the strict v0.2 core gate? | `CORE_GATE_FAILED` |
+| S-4 | Is the D1 decomposition complete? | `D1_GATE_FAILED` |
+| S-5 | Is `gst_zscore` present with a successful status and valid provenance? | `GST_PROVENANCE_FAILED` |
+| S-6 | Is `abs_overnight_gap` present with valid market-data provenance? | `OUTCOME_MISSING` |
+| S-7 | Is the release BMO or AMC? | `MEASUREMENT_INCOMPATIBLE_INTRADAY` |
+| S-8 | Is it within rank 60 of the frozen order? | `EXTENSION_COHORT` |
 
-**Step 7 is evaluated ahead of steps 3–6** even though it is numbered later. An intraday release is
-measurement-incompatible whatever its data completeness, so reporting it as a data-quality failure
-would misattribute the reason. The set of eligible events is identical either way; only the exclusion
-label differs. Ordering within the exclusion codes is a reporting choice, not a scientific one.
+**First-failure attribution is part of the audit record.** An event failing several gates receives the
+code of the **first** gate it fails, so the order determines the exclusion reason. Reordering the
+gates would leave the eligible *set* unchanged — an event must pass every gate to be eligible — but it
+would change the recorded reason, and §1 requires that *"every disposition is recorded"*. The
+registered sequence is therefore implemented literally, and `REGISTERED_GATE_ORDER` in
+`tools/hyp01_eligibility.py` is asserted against actual behaviour by test E15.
+
+**Where structural refusals sit.** S-1 and S-2 read the registration only, so they are evaluable even
+on a malformed record set — and when they fail they give the more informative answer (the event is not
+in the study at all). Every later gate reads the joined legs, so a join refusal surfaces between S-2
+and S-3: at the first gate that cannot be evaluated without the missing data, neither earlier nor
+later. Duplicate detection precedes everything and raises for the whole run.
 
 **Ordering for step 8** is `(response_session_date ASC, event_id ASC)`, per §2 — deterministic and
 independent of arrival order, which test D4 confirms by reversing every input list.
@@ -121,9 +131,24 @@ Two governing artifacts disagree, and the disagreement is recorded rather than s
 `response_magnitude.py:41` maps `"overnight_gap" → "abs_overnight_gap"`. All three named functions
 exist, and `test_market_response_absolute_persistence.py` passes.
 
-**No artifact was edited to reconcile this.** Correcting the eligibility-rules text is a documentation
-amendment to a governing artifact and needs its own authorization. Until then, an operator reading
-that document alone would wrongly conclude the path is blocked. It is not.
+**Chronology (from Git history, not inferred):** the eligibility rules and the analysis lock were
+authored together in `d059c0b` at 2026-08-08 23:28:32 −0500, and **both** correctly said the field was
+not yet emitted. `5fd82ad` implemented emission 27 minutes 16 seconds later, at 23:55:48, and updated
+the lock's `persistence_note` but not the eligibility rules. **The statement was correct when authored
+and became stale 27 minutes later** — an update omission in `5fd82ad`, not an authoring error.
+
+**The original artifact is not edited.** Per its own §7 (*"a dated amendment alongside the frozen
+artifact — never as an edit to it"*), the correction is recorded in an append-only erratum beside it:
+
+```
+Live Signal Engine/GST_HYP01_ELIGIBILITY_AND_FREEZE_RULES_v1.0_IMPLEMENTATION_STATUS_ERRATUM_2026-08-27.md
+```
+
+The erratum corrects implementation status only. It changes no outcome definition, timing rule,
+eligibility gate, sample-size gate, SESOI status or analysis authorization, and it records that Event
+60 remains procedurally dependent on human enrollment and human freeze authorization. An operator
+reading the governing artifact alone would wrongly conclude the path is technically blocked; it is
+not, but it remains procedurally blocked.
 
 `D1_REQUIRED_FIELDS` is a locked completeness gate and was **not** modified — `abs_overnight_gap` is a
 derived output, not a new completeness requirement, exactly as the lock states.
@@ -144,7 +169,7 @@ rule `D16 = NO_PROJECT_DERIVED_POWER_CLAIM` prohibits.
 ## 8. Verification
 
 ```
-python test_hyp01_eligibility.py        # 37 checks — join, ladder, gate, non-disclosure
+python test_hyp01_eligibility.py        # 63 checks — join, ladder, gate order, provenance, non-disclosure
 python test_hyp01_progress_report.py    # 22 checks — redaction, deterministic counting
 ```
 
@@ -153,6 +178,12 @@ is synthetic and built in memory or in a temporary directory. Neither suite read
 
 The gate arithmetic is tested at the boundary specifically: 59 events do not trigger the freeze, the
 60th does, and 75 still yields exactly 60 with 15 in the extension cohort.
+
+First-failure precedence is tested for every adjacent pair of ordered gates where simultaneous failure
+is possible (S-1/S-2 through S-7/S-8), for timing combined with each missing leg, for provenance
+combined with completeness, for duplicates combined with other failures, and for an event that fails
+every gate at once. Provenance failures are separately proven unable to be marked eligible, to
+increment the count, or to contribute to the event-60 freeze.
 
 ## 9. Standing constraints observed in this work
 
