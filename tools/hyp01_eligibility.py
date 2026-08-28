@@ -1,35 +1,48 @@
 #!/usr/bin/env python3
-"""HYP-01 exact GST/D1 join and deterministic eligibility-counting driver.
+"""HYP-01 exact join and deterministic eligibility-counting driver.
 
-Implements the two components the locked artifacts specify but no code provided:
-an exact-key join between the GST measurement leg and the D1 market-response
-leg, and a driver that counts eligible events against the locked 60-event gate.
+Implements the two components the locked artifacts specify but no code
+provided: an exact-key join across the canonical registry, the pre-event
+module-eligibility marker, the GST leg and the D1 leg; and a driver that counts
+eligible events against the locked 60-event gate.
 
 GOVERNING ARTIFACTS
   Live Signal Engine/GST_HYP01_ELIGIBILITY_AND_FREEZE_RULES_v1.0.md
-      section 1  the eight-step ladder and its registered dispositions
-      section 2  ordering: sort key = (response_session_date ASC, event_id ASC)
+      section 1  the S-1..S-8 ladder and its registered dispositions
+      section 2  ordering: (response_session_date ASC, event_id ASC)
       section 5  freeze procedure, triggered exactly once at the 60th event
       section 6  extension cohort; no optional stopping; no model change
   Live Signal Engine/GST_HYP01_ANALYSIS_LOCK_v1.0.json
-      /sample/inclusion_conditions   the step rules
-      /primary_outcome/field         abs_overnight_gap
-      freeze_and_display.threshold   60
-  gst_market_response/completeness.py   the three implemented gate functions
+      /sample/inclusion_conditions[0..7]   S-1..S-8, naming the mechanizer for
+                                           S-2, S-3 and S-4
+      /primary_outcome/field               abs_overnight_gap
+  Live Signal Engine/GST_HYP01_EFFECTIVE_LOCK_REPORT_v1.0.json
+      freeze_and_display.threshold         60
+
+CANONICAL SCHEMA FIDELITY
+  Registry rows are `REGISTRATION` and `AMENDMENT` -- the row types
+  EventRegistryRow actually validates. Amendment folding is delegated to
+  HumanVerifiedEventRegistry.effective_row(); this module adds a validation
+  pass in front of it and implements no second folding algorithm.
+
+  S-2 is mechanised by completeness.is_eligible_for_hypothesis(), reading the
+  module-eligibility block persisted on the pre-event stage marker. It is NOT
+  read from the event registry, which carries no hypothesis-family field.
 
 WHAT THIS DOES NOT DO
-  - It does not enroll events. Enrollment is a human verified decision recorded
-    in the registry; this module only reads `verification_status`.
+  - It does not enroll or amend events. Enrollment is a human verified decision
+    recorded in the registry; this module only reads it.
   - It does not freeze the cohort, record the environment freeze, or authorize
     or run the primary model. Reaching 60 REFUSES further counting and emits a
     freeze-required signal for a human to act on (section 5 steps 1-4).
-  - It does not print any measurement value. Statuses, counts, identifiers,
-    dates, reason codes and provenance hashes only.
-  - It performs no network access and opens no real prospective record when
-    driven at a synthetic root.
+  - It does not read, derive or print any measurement value. Statuses, counts,
+    identifiers, dates, reason codes and provenance hashes only. The marker's
+    `response_magnitude` block carries real abs_* outcome values and is
+    projected away on ingest rather than merely left unread.
+  - It performs no network access.
 
 INACTIVE BY DESIGN. Nothing here is wired to Task Scheduler, and this module
-was never executed against real prospective data.
+has never been executed against a real prospective record.
 """
 from __future__ import annotations
 
@@ -37,21 +50,26 @@ import argparse
 import hashlib
 import json
 import sys
-from datetime import date
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Iterable
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from gst_market_response.completeness import (  # noqa: E402
-    D1_REQUIRED_FIELDS, STRICT_CORE_REQUIRED_PROVENANCE, STRICT_CORE_SIX_FIELDS,
-    STRICT_CORE_STATUS_KEY, STRICT_CORE_SUCCESS_STATUSES,
-    evaluate_strict_core_v0_2, is_valid_d1_decomposition,
+    D1_REQUIRED_FIELDS, HYPOTHESIS_CORE_ATTENTION_RESPONSE,
+    STRICT_CORE_REQUIRED_PROVENANCE, STRICT_CORE_SIX_FIELDS,
+    STRICT_CORE_STATUS_KEY, STRICT_CORE_SUCCESS_STATUSES, LegacyRecordError,
+    evaluate_strict_core_v0_2, is_eligible_for_hypothesis,
+    is_valid_d1_decomposition, read_module_eligibility,
 )
+from gst_market_response.event_registry import (  # noqa: E402
+    HumanVerifiedEventRegistry,
+)
+from gst_market_response.stage_markers import STAGE_PRE_EVENT  # noqa: E402
 
-# freeze_and_display.threshold in GST_HYP01_ANALYSIS_LOCK_v1.0.json
+# freeze_and_display.threshold in GST_HYP01_EFFECTIVE_LOCK_REPORT_v1.0.json
 BINDING_TARGET = 60
 
 # Registered dispositions, verbatim from the ladder, section 1.
@@ -70,8 +88,11 @@ REASONS = (
     R_MEASUREMENT_INCOMPATIBLE_INTRADAY, R_EXTENSION_COHORT,
 )
 
-# Join-integrity refusals. These are not eligibility dispositions -- they mean
-# the record set is malformed and no disposition may be assigned at all.
+# --- Structural refusals ----------------------------------------------------
+# A refusal is NOT a scientific disposition. It means an input artifact is
+# absent or malformed, so no gate can be evaluated and no disposition may be
+# assigned. An operator fixes the input; the event is neither eligible nor
+# scientifically excluded in the meantime.
 J_DUPLICATE_EVENT = "JOIN_REFUSED_DUPLICATE_EVENT"
 J_DUPLICATE_LEG = "JOIN_REFUSED_DUPLICATE_LEG"
 J_MISSING_GST_LEG = "JOIN_REFUSED_MISSING_GST_LEG"
@@ -80,56 +101,93 @@ J_KEY_MISMATCH = "JOIN_REFUSED_KEY_MISMATCH"
 J_UNEXPECTED_FIELD = "JOIN_REFUSED_UNEXPECTED_SCHEMA_FIELD"
 J_NO_CAPTURE_TIME = "JOIN_REFUSED_NO_CAPTURE_TIME"
 
+# Registry-shape refusals.
+J_NO_BASE_REGISTRATION = "JOIN_REFUSED_NO_BASE_REGISTRATION"
+J_DUPLICATE_BASE_REGISTRATION = "JOIN_REFUSED_DUPLICATE_BASE_REGISTRATION"
+J_ORPHAN_AMENDMENT = "JOIN_REFUSED_ORPHAN_AMENDMENT"
+J_ILLEGAL_IDENTITY_CHANGE = "JOIN_REFUSED_ILLEGAL_IDENTITY_CHANGE"
+J_UNKNOWN_ROW_TYPE = "JOIN_REFUSED_UNKNOWN_ROW_TYPE"
+J_MISSING_REGISTRY_FIELD = "JOIN_REFUSED_MISSING_REGISTRY_FIELD"
+
+# Module-eligibility (S-2 evidence) refusals.
+#
+# WHY THESE HAD TO BE ADDED. Every registered disposition in section 1 is a
+# SCIENTIFIC outcome; none of them describes "the artifact carrying the S-2
+# decision is absent or unreadable". Mapping that to CLASS_INELIGIBLE would
+# record a scientific exclusion that was never evaluated, and mapping it to
+# eligible would be worse. completeness.LegacyRecordError is the canonical
+# fail-closed mechanism for an unreadable eligibility block and is used
+# directly; these codes only carry it out to the caller. They are the narrowest
+# clearly-structural additions that keep the distinction intact, and they add
+# no scientific disposition.
+J_MISSING_PRE_EVENT_MARKER = "JOIN_REFUSED_MISSING_PRE_EVENT_MARKER"
+J_MISSING_MODULE_ELIGIBILITY = "JOIN_REFUSED_MISSING_MODULE_ELIGIBILITY"
+J_UNREADABLE_MODULE_ELIGIBILITY = "JOIN_REFUSED_UNREADABLE_MODULE_ELIGIBILITY"
+J_MARKER_IDENTITY_MISMATCH = "JOIN_REFUSED_MARKER_IDENTITY_MISMATCH"
+
 JOIN_REFUSALS = (
     J_DUPLICATE_EVENT, J_DUPLICATE_LEG, J_MISSING_GST_LEG, J_MISSING_D1_LEG,
     J_KEY_MISMATCH, J_UNEXPECTED_FIELD, J_NO_CAPTURE_TIME,
+    J_NO_BASE_REGISTRATION, J_DUPLICATE_BASE_REGISTRATION, J_ORPHAN_AMENDMENT,
+    J_ILLEGAL_IDENTITY_CHANGE, J_UNKNOWN_ROW_TYPE, J_MISSING_REGISTRY_FIELD,
+    J_MISSING_PRE_EVENT_MARKER, J_MISSING_MODULE_ELIGIBILITY,
+    J_UNREADABLE_MODULE_ELIGIBILITY, J_MARKER_IDENTITY_MISMATCH,
 )
 
-# NOTE ON THE DIVISION OF LABOUR between refusals and dispositions.
-# The join establishes IDENTITY only: does exactly one GST leg and one D1 leg
-# exist for this registered event, under exactly the registered keys, carrying
-# only known columns. Those are structural questions with no registered
-# scientific disposition, so they REFUSE -- no event is counted or excluded on
-# a malformed record set, and the operator must fix the input.
-#
-# Provenance QUALITY is a different question and the ladder already has
-# registered codes for it: step 5 (GST_PROVENANCE_FAILED) and step 6
-# (OUTCOME_MISSING). Checking provenance content in the join would emit an
-# unregistered code where a registered one exists, and would make
-# GST_PROVENANCE_FAILED unreachable. So it is checked in classify(), not here.
+# Canonical registry row types. `event` is NOT one of them and never was.
+ROW_REGISTRATION = "REGISTRATION"
+ROW_AMENDMENT = "AMENDMENT"
+CANONICAL_ROW_TYPES = (ROW_REGISTRATION, ROW_AMENDMENT)
 
-# Step 5 of the ladder: gst_zscore non-null AND source_status_gst successful.
-# Bound to the locked constant so it cannot diverge from the core gate.
+# S-5: gst_zscore non-null AND source_status_gst successful. Bound to the
+# locked constant so it cannot diverge from the core gate.
 GST_OK_STATUSES = frozenset(STRICT_CORE_SUCCESS_STATUSES)
 
-# Step 7: release session must be one of these. Anything else is intraday and
-# measurement-incompatible.
+# S-7: eligible release sessions, per /sample/eligible_release_sessions.
 VALID_SESSIONS = frozenset({"BMO", "AMC"})
 
-# The only identifier keys a join may use. Registered identifiers only -- no
-# company name, no fuzzy ticker, no nearest date.
+# Registry fields this path depends on. Never defaulted when absent -- a
+# missing one refuses (J_MISSING_REGISTRY_FIELD) rather than being invented.
+REQUIRED_REGISTRY_FIELDS = (
+    "event_id", "ticker", "fiscal_period", "earnings_date",
+    "release_market_session", "expected_response_session",
+    "verification_status", "row_type", "row_id",
+)
+
+# An AMENDMENT may correct timing, sourcing and status. It may NEVER change who
+# the event is. effective_row() would fold such a change silently, so it is
+# refused before the fold.
+IDENTITY_FIELDS = ("event_id", "ticker", "fiscal_period")
+
+# Join keys. Registered identifiers only -- no company name, no fuzzy ticker,
+# no nearest date.
 JOIN_KEYS = ("event_id", "ticker", "earnings_date")
 
-# Keys permitted on a joined leg. Anything else is an unexpected schema field
-# and refuses, so an upstream column cannot silently enter the pipeline.
-# The strict v0.2 core gate reads all six panel fields and their five per-leg
-# source statuses, so the whitelist must admit exactly those and nothing more.
-# Sourced from completeness.STRICT_CORE_SIX_FIELDS / STRICT_CORE_STATUS_KEY /
-# STRICT_CORE_REQUIRED_PROVENANCE rather than restated, so the two cannot drift.
+# Whitelisted leg columns. Anything else refuses, so an upstream column cannot
+# silently enter the pipeline.
 GST_LEG_ALLOWED = frozenset({
     *JOIN_KEYS, *STRICT_CORE_SIX_FIELDS, *STRICT_CORE_STATUS_KEY.values(),
     *STRICT_CORE_REQUIRED_PROVENANCE, "provenance_path", "provenance_sha256",
     "captured_at_utc",
 })
+# The D1 leg no longer carries session or response-session date: both are
+# registered human-verified timing and come from the effective registry row.
 D1_LEG_ALLOWED = frozenset({
-    *JOIN_KEYS, "release_market_session", "response_session_date",
-    "abs_overnight_gap", *D1_REQUIRED_FIELDS, "provenance_path",
+    *JOIN_KEYS, "abs_overnight_gap", *D1_REQUIRED_FIELDS, "provenance_path",
     "provenance_sha256", "captured_at_utc", "market_data_provenance_valid",
 })
 
+# Marker keys retained on ingest. `response_magnitude` is deliberately absent:
+# it carries real abs_* outcome values, so it is projected away.
+MARKER_KEEP = ("event_id", "stage", "module_eligibility",
+               "module_eligibility_note", "lifecycle_state", "protocol_version")
+MARKER_PROVENANCE_KEEP = ("ticker", "source_csv_sha256", "source_marker_sha256",
+                          "pre_event_snapshot_asof_utc", "methodology_version")
+
 
 class JoinRefusal(Exception):
-    """Raised when the record set is malformed. Carries a registered code."""
+    """Raised when an input artifact is absent or malformed. Carries a
+    registered structural code."""
 
     def __init__(self, code: str, event_id: str, detail: str = ""):
         super().__init__(f"{code}: {event_id} {detail}".strip())
@@ -154,14 +212,169 @@ def _check_schema(leg: dict, allowed: frozenset, event_id: str, which: str) -> N
 
 def provenance_ok(leg: dict) -> bool:
     """A leg carries usable provenance: a non-empty path and a well-formed
-    lowercase SHA-256. Absent or malformed provenance is a FAILED gate, not a
-    silently-accepted one."""
+    lowercase SHA-256. Absent or malformed provenance is a FAILED gate."""
     path = leg.get("provenance_path")
     digest = leg.get("provenance_sha256")
     if not path or not isinstance(digest, str):
         return False
     return len(digest) == 64 and all(c in "0123456789abcdef" for c in digest)
 
+
+# ---------------------------------------------------------------------------
+# Canonical registry handling
+# ---------------------------------------------------------------------------
+
+def validate_registry_rows(rows: list[dict]) -> None:
+    """Structural validation of the raw append-only registry log.
+
+    Runs BEFORE any fold and implements no folding of its own. Its purpose is
+    to refuse the shapes effective_row() would otherwise absorb silently: a
+    second base registration (it takes the first), an amendment pointing at
+    nothing (it folds anyway), and an amendment that rewrites identity (it
+    folds that too).
+    """
+    by_id: dict[str, str] = {}
+    registrations: dict[str, int] = {}
+    for r in rows:
+        rt = r.get("row_type")
+        eid = r.get("event_id") or "<none>"
+        if rt not in CANONICAL_ROW_TYPES:
+            raise JoinRefusal(J_UNKNOWN_ROW_TYPE, eid,
+                              f"row_type={rt!r}; canonical types are {CANONICAL_ROW_TYPES}")
+        rid = r.get("row_id")
+        if not rid:
+            raise JoinRefusal(J_MISSING_REGISTRY_FIELD, eid, "row_id absent")
+        if rid in by_id:
+            raise JoinRefusal(J_DUPLICATE_LEG, eid, f"row_id {rid!r} appears twice")
+        by_id[rid] = eid
+        if rt == ROW_REGISTRATION:
+            registrations[eid] = registrations.get(eid, 0) + 1
+
+    for eid, n in sorted(registrations.items()):
+        if n > 1:
+            raise JoinRefusal(J_DUPLICATE_BASE_REGISTRATION, eid,
+                              f"{n} REGISTRATION rows; exactly one is required")
+
+    base = {r["event_id"]: r for r in rows if r.get("row_type") == ROW_REGISTRATION}
+    for r in rows:
+        if r.get("row_type") != ROW_AMENDMENT:
+            continue
+        eid = r.get("event_id") or "<none>"
+        amends = r.get("amends_row_id")
+        if not amends:
+            raise JoinRefusal(J_ORPHAN_AMENDMENT, eid, "amends_row_id absent")
+        if amends not in by_id:
+            raise JoinRefusal(J_ORPHAN_AMENDMENT, eid,
+                              f"amends_row_id {amends!r} matches no row")
+        if by_id[amends] != eid:
+            raise JoinRefusal(J_ORPHAN_AMENDMENT, eid,
+                              f"amends_row_id {amends!r} belongs to {by_id[amends]!r}")
+        if eid not in registrations:
+            raise JoinRefusal(J_NO_BASE_REGISTRATION, eid,
+                              "AMENDMENT with no base REGISTRATION")
+        # An amendment may correct timing, sourcing and status -- never identity.
+        original = base.get(eid)
+        for f in IDENTITY_FIELDS:
+            if f in r and original is not None and r[f] != original.get(f):
+                raise JoinRefusal(
+                    J_ILLEGAL_IDENTITY_CHANGE, eid,
+                    f"amendment changes {f}: {original.get(f)!r} -> {r[f]!r}")
+
+
+def load_effective_registrations(registry_root: Path) -> list[dict]:
+    """Validate the log, then return one effective row per event.
+
+    The fold itself is HumanVerifiedEventRegistry.effective_row() -- the
+    canonical implementation, called directly -- so no amendment-folding logic
+    is reimplemented here and the two cannot drift.
+    """
+    registry = HumanVerifiedEventRegistry(Path(registry_root))
+    rows = registry.read_all()
+    validate_registry_rows(rows)
+
+    # One entry per event_id, in first-appearance order. An amendment
+    # contributes corrections to its event, never a new event.
+    order: list[str] = []
+    for r in rows:
+        if r["event_id"] not in order:
+            order.append(r["event_id"])
+
+    effective = []
+    for eid in order:
+        row = registry.effective_row(eid)
+        if row is None:
+            raise JoinRefusal(J_NO_BASE_REGISTRATION, eid,
+                              "no REGISTRATION row for this event_id")
+        missing = sorted(f for f in REQUIRED_REGISTRY_FIELDS
+                         if row.get(f) in (None, ""))
+        if missing:
+            raise JoinRefusal(J_MISSING_REGISTRY_FIELD, eid,
+                              f"absent or blank: {missing}")
+        effective.append(row)
+    return effective
+
+
+# ---------------------------------------------------------------------------
+# S-2 evidence: the persisted pre-event module-eligibility marker
+# ---------------------------------------------------------------------------
+
+def project_marker(marker: dict) -> dict:
+    """Keep only identity, provenance and the module-eligibility decision.
+
+    Structural redaction: the marker's `response_magnitude` block carries real
+    abs_* outcome values, so it is dropped here rather than carried around
+    unread.
+    """
+    out = {k: marker[k] for k in MARKER_KEEP if k in marker}
+    prov = marker.get("provenance") or {}
+    out["provenance"] = {k: prov.get(k) for k in MARKER_PROVENANCE_KEEP if k in prov}
+    return out
+
+
+def module_eligibility_for(effective: dict, marker: dict | None):
+    """Return the parsed ModuleEligibility for an event, or refuse.
+
+    Fails closed on every unreadable path. A missing, null, legacy or malformed
+    block is a STRUCTURAL input problem -- never silently CLASS_INELIGIBLE and
+    never silently eligible.
+    """
+    eid = effective["event_id"]
+    if marker is None:
+        raise JoinRefusal(J_MISSING_PRE_EVENT_MARKER, eid,
+                          "no pre-event stage marker supplied")
+    if marker.get("stage") != STAGE_PRE_EVENT:
+        raise JoinRefusal(J_MARKER_IDENTITY_MISMATCH, eid,
+                          f"marker stage={marker.get('stage')!r}, expected {STAGE_PRE_EVENT!r}")
+    if marker.get("event_id") != eid:
+        raise JoinRefusal(J_MARKER_IDENTITY_MISMATCH, eid,
+                          f"marker event_id={marker.get('event_id')!r}")
+    prov_ticker = (marker.get("provenance") or {}).get("ticker")
+    if prov_ticker is not None and prov_ticker != effective["ticker"]:
+        raise JoinRefusal(J_MARKER_IDENTITY_MISMATCH, eid,
+                          "marker provenance ticker differs from the registered ticker")
+
+    block = marker.get("module_eligibility")
+    if block is None:
+        # build_stage_marker() sets this to None both when no pre-event record
+        # exists and when the record is legacy; module_eligibility_note says
+        # which. Either way there is no persisted decision to read.
+        raise JoinRefusal(J_MISSING_MODULE_ELIGIBILITY, eid,
+                          str(marker.get("module_eligibility_note") or "block is null"))
+    if not isinstance(block, dict):
+        raise JoinRefusal(J_UNREADABLE_MODULE_ELIGIBILITY, eid,
+                          f"block is {type(block).__name__}, not an object")
+    try:
+        # completeness.read_module_eligibility is the canonical reader AND the
+        # canonical fail-closed mechanism: it raises LegacyRecordError rather
+        # than defaulting a pre-amendment or malformed record.
+        return read_module_eligibility(block)
+    except LegacyRecordError as exc:
+        raise JoinRefusal(J_UNREADABLE_MODULE_ELIGIBILITY, eid, str(exc)) from exc
+
+
+# ---------------------------------------------------------------------------
+# Join
+# ---------------------------------------------------------------------------
 
 def _index_unique(legs: Iterable[dict], which: str) -> dict:
     """Index legs by event_id, refusing duplicates.
@@ -182,14 +395,14 @@ def _index_unique(legs: Iterable[dict], which: str) -> dict:
     return out
 
 
-def join_event(registration: dict, gst_leg: dict | None, d1_leg: dict | None) -> dict:
+def join_event(effective: dict, marker: dict | None, gst_leg: dict | None,
+               d1_leg: dict | None) -> dict:
     """Exact-key join for one event. Refuses rather than guessing.
 
-    Returns the joined record. Raises JoinRefusal on any integrity problem.
+    Identity comes from the effective registration; timing comes from the
+    registered human-verified fields, not from a capture leg.
     """
-    eid = registration.get("event_id")
-    if not eid:
-        raise JoinRefusal(J_KEY_MISMATCH, "<none>", "registration has no event_id")
+    eid = effective["event_id"]
     if gst_leg is None:
         raise JoinRefusal(J_MISSING_GST_LEG, eid)
     if d1_leg is None:
@@ -200,26 +413,31 @@ def join_event(registration: dict, gst_leg: dict | None, d1_leg: dict | None) ->
 
     # Every join key must match EXACTLY across all three sources.
     for k in JOIN_KEYS:
-        vals = {str(registration.get(k)), str(gst_leg.get(k)), str(d1_leg.get(k))}
+        vals = {str(effective.get(k)), str(gst_leg.get(k)), str(d1_leg.get(k))}
         if len(vals) != 1 or "None" in vals:
             raise JoinRefusal(J_KEY_MISMATCH, eid, f"key {k!r} differs across legs")
 
-    # An undated capture cannot be ordered or audited, so it is refused rather
-    # than reinterpreted. The VALUE of the timestamp is never compared against
-    # anything here -- that would require reading the measurement schedule.
+    # An undated capture cannot be ordered or audited. The VALUE of the
+    # timestamp is never compared against anything here.
     for leg, which in ((gst_leg, "gst"), (d1_leg, "d1")):
         if not leg.get("captured_at_utc"):
             raise JoinRefusal(J_NO_CAPTURE_TIME, eid, f"{which} leg has no capture time")
 
+    eligibility = module_eligibility_for(effective, marker)
+
     return {
         "event_id": eid,
-        "ticker": registration["ticker"],
-        "earnings_date": registration["earnings_date"],
-        "release_market_session": d1_leg.get("release_market_session"),
-        "response_session_date": d1_leg.get("response_session_date"),
+        "ticker": effective["ticker"],
+        "fiscal_period": effective["fiscal_period"],
+        "earnings_date": effective["earnings_date"],
+        # Registered human-verified timing -- the registry is authoritative.
+        "release_market_session": effective["release_market_session"],
+        "response_session_date": effective["expected_response_session"],
+        "module_eligibility": eligibility,
         "gst": gst_leg,
         "d1": d1_leg,
         "provenance": {
+            "registry_row_id": effective.get("row_id"),
             "gst_path": gst_leg.get("provenance_path"),
             "gst_sha256": gst_leg.get("provenance_sha256"),
             "d1_path": d1_leg.get("provenance_path"),
@@ -228,52 +446,57 @@ def join_event(registration: dict, gst_leg: dict | None, d1_leg: dict | None) ->
     }
 
 
-def classify(registration: dict, joined: dict | None,
+# ---------------------------------------------------------------------------
+# The ladder
+# ---------------------------------------------------------------------------
+
+def classify(effective: dict, joined: dict | None,
              refusal: JoinRefusal | None) -> tuple[bool, str | None]:
     """Apply the registered ladder to one event. Returns (eligible, reason).
 
     THE ORDER HERE IS THE REGISTERED ORDER AND MAY NOT BE REARRANGED.
-    S-1..S-8 are fixed by GST_HYP01_ELIGIBILITY_AND_FREEZE_RULES_v1.0.md section 1
-    and, identically, by GST_HYP01_ANALYSIS_LOCK_v1.0.json
-    /sample/inclusion_conditions[0..7]. Both artifacts place the BMO/AMC session
-    check at S-7, AFTER the completeness and provenance gates.
+    S-1..S-8 are fixed by GST_HYP01_ELIGIBILITY_AND_FREEZE_RULES_v1.0.md
+    section 1 and, identically, by GST_HYP01_ANALYSIS_LOCK_v1.0.json
+    /sample/inclusion_conditions[0..7].
 
-    Reordering the gates would leave the eligible SET unchanged, because an event
-    must pass every gate to be eligible. It would NOT leave the audit record
-    unchanged: the disposition assigned to a multi-failure event is the code of
-    the FIRST gate it fails, so the order determines the exclusion reason. First-
-    failure attribution is part of the audit trail (section 1: "Every disposition
-    is recorded"), so the registered sequence is implemented literally.
+    Reordering would leave the eligible SET unchanged, because an event must
+    pass every gate. It would NOT leave the audit record unchanged: the
+    disposition assigned to a multi-failure event is the code of the FIRST gate
+    it fails, so the order determines the exclusion reason. Section 1 requires
+    that "every disposition is recorded", so the sequence is literal.
 
-    S-8 (rank <= 60) is a property of the ordered set, not of one event, and is
-    applied by the driver.
+    S-8 (rank <= 60) is a property of the ordered set and is applied by the
+    driver.
     """
-    # --- S-1: enrolled under cohort protocol v1.0 (human verified) -----------
-    # Reads the registration only, so it is evaluable even on a malformed
-    # record set -- and it is the most informative answer when it fails: the
-    # event is not in the study at all.
-    if str(registration.get("verification_status", "")).lower() != "verified":
-        return False, R_NOT_ENROLLED
-    if str(registration.get("row_type", "event")).lower() != "event":
+    # --- S-1: enrolled under cohort protocol v1.0 (human verified) ----------
+    # Reads the EFFECTIVE registration -- the base REGISTRATION row with every
+    # amendment folded in -- so a corrected status is honoured. This is the
+    # only gate evaluable without the capture artifacts.
+    if str(effective.get("verification_status", "")).lower() != "verified":
         return False, R_NOT_ENROLLED
 
-    # --- S-2: hypothesis-family gate ----------------------------------------
-    # Also reads the registration only, so it precedes the join refusal for the
-    # same reason S-1 does.
-    if str(registration.get("hypothesis_class", "core_attention_vs_equity_response"))             != "core_attention_vs_equity_response":
-        return False, R_CLASS_INELIGIBLE
-
-    # --- structural refusal --------------------------------------------------
-    # Every remaining gate (S-3..S-7) reads the joined legs. If the record set is
-    # malformed, NO later gate can be evaluated, so the refusal surfaces here --
-    # at the first gate that needs the missing data, not earlier and not later.
-    # A refusal is not a scientific disposition: the event is neither eligible
-    # nor excluded on scientific grounds, and an operator must fix the input.
+    # --- structural availability --------------------------------------------
+    # Every remaining gate reads a joined artifact, INCLUDING S-2, whose
+    # evidence is the persisted pre-event marker. If any required artifact is
+    # absent or unreadable, no later gate can be evaluated, so the refusal
+    # surfaces here: after enrollment, before S-2. A refusal is not a
+    # scientific disposition.
     if refusal is not None:
         return False, refusal.code
     assert joined is not None
 
+    # --- S-2: hypothesis-family gate, via the locked mechanizer -------------
+    # The lock names completeness.is_eligible_for_hypothesis as the mechanizer.
+    # Its input is the module-eligibility decision PERSISTED on the pre-event
+    # stage marker -- not any registry field, and not a reconstruction.
+    if not is_eligible_for_hypothesis(HYPOTHESIS_CORE_ATTENTION_RESPONSE,
+                                      joined["module_eligibility"]):
+        return False, R_CLASS_INELIGIBLE
+
     # --- S-3: strict v0.2 core gate over the six panel fields ---------------
+    # Independent of S-2. S-2 asks whether the PERSISTED decision admits this
+    # hypothesis family; S-3 re-verifies the underlying six-field evidence from
+    # the raw leg. A persisted decision never substitutes for the raw check.
     if not evaluate_strict_core_v0_2(joined["gst"]).passed:
         return False, R_CORE_GATE_FAILED
 
@@ -297,7 +520,7 @@ def classify(registration: dict, joined: dict | None,
     if not provenance_ok(joined["d1"]):
         return False, R_OUTCOME_MISSING
 
-    # --- S-7: release session in {BMO, AMC} ---------------------------------
+    # --- S-7: registered release session in {BMO, AMC} ----------------------
     session = str(joined.get("release_market_session") or "").upper()
     if session not in VALID_SESSIONS:
         return False, R_MEASUREMENT_INCOMPATIBLE_INTRADAY
@@ -325,42 +548,46 @@ def _sort_key(rec: dict) -> tuple:
     return (str(rec.get("response_session_date") or ""), str(rec.get("event_id") or ""))
 
 
-def run_driver(registrations: list[dict], gst_legs: list[dict],
+def run_driver(registry_root: Path, markers: list[dict], gst_legs: list[dict],
                d1_legs: list[dict]) -> dict:
-    """Deterministic eligibility count. Pure: reads inputs, returns a status
-    document. Writes nothing; the caller persists it."""
+    """Deterministic eligibility count over the canonical effective registry.
+
+    Reads inputs and returns a status document; writes nothing. The caller
+    persists it.
+    """
     tally = {r: 0 for r in REASONS}
     tally.update({j: 0 for j in JOIN_REFUSALS})
 
-    seen: set[str] = set()
-    for reg in registrations:
-        eid = reg.get("event_id")
-        if eid in seen:
-            raise JoinRefusal(J_DUPLICATE_EVENT, str(eid), "registry lists it twice")
-        seen.add(str(eid))
+    effective_rows = load_effective_registrations(Path(registry_root))
 
+    seen: set[str] = set()
+    for row in effective_rows:
+        eid = row["event_id"]
+        if eid in seen:
+            raise JoinRefusal(J_DUPLICATE_EVENT, eid, "effective registry lists it twice")
+        seen.add(eid)
+
+    marker_ix = {k: project_marker(v)
+                 for k, v in _index_unique(markers, "pre-event marker").items()}
     gst_ix = _index_unique(gst_legs, "gst")
     d1_ix = _index_unique(d1_legs, "d1")
 
     candidates: list[dict] = []
-    for reg in registrations:
-        eid = str(reg.get("event_id"))
+    for row in effective_rows:
+        eid = row["event_id"]
         joined = None
         refusal = None
         try:
-            joined = join_event(reg, gst_ix.get(eid), d1_ix.get(eid))
+            joined = join_event(row, marker_ix.get(eid), gst_ix.get(eid), d1_ix.get(eid))
         except JoinRefusal as e:
             refusal = e
-        ok, reason = classify(reg, joined, refusal)
+        ok, reason = classify(row, joined, refusal)
         if ok:
             candidates.append(joined)
         else:
-            if reason in tally:
-                tally[reason] += 1
-            else:
-                tally[reason] = tally.get(reason, 0) + 1
+            tally[reason] = tally.get(reason, 0) + 1
 
-    # Step 8 -- deterministic order, rank <= 60 eligible, the rest extension.
+    # S-8 -- deterministic order, rank <= 60 eligible, the rest extension.
     candidates.sort(key=_sort_key)
     eligible = candidates[:BINDING_TARGET]
     extension = candidates[BINDING_TARGET:]
@@ -376,8 +603,9 @@ def run_driver(registrations: list[dict], gst_legs: list[dict],
         "remaining_until_target": max(0, BINDING_TARGET - count),
         "eligible_event_ids": [c["event_id"] for c in eligible],
         "extension_cohort_event_ids": [c["event_id"] for c in extension],
-        "exclusions_by_reason": {k: v for k, v in sorted(tally.items()) if v or k in REASONS},
-        "registry_rows_seen": len(registrations),
+        "exclusions_by_reason": {k: v for k, v in sorted(tally.items())
+                                 if v or k in REASONS},
+        "effective_events_seen": len(effective_rows),
         "freeze_required": at_gate,
         "counting_state": "REFUSED_AT_GATE" if at_gate else "COUNTING",
         "freeze_note": (
@@ -392,7 +620,13 @@ def run_driver(registrations: list[dict], gst_legs: list[dict],
         "analysis_authorized": False,
         "notes": [
             "No measurement or outcome value is included in this document.",
-            "Enrollment is a human verified decision; this driver never enrolls.",
+            "Enrollment is a human verified decision; this driver never enrolls "
+            "and never amends the registry.",
+            "Registry rows are REGISTRATION and AMENDMENT; amendments are folded "
+            "by HumanVerifiedEventRegistry.effective_row() and are never counted "
+            "as separate events.",
+            "S-2 is decided by completeness.is_eligible_for_hypothesis() over the "
+            "module eligibility persisted on the pre-event stage marker.",
             "Events beyond rank 60 in the section-2 order are EXTENSION_COHORT and "
             "never enlarge the frozen set.",
         ],
@@ -407,18 +641,23 @@ def status_digest(status: dict) -> str:
 def _load_jsonl(p: Path) -> list[dict]:
     if not p.exists():
         return []
-    return [json.loads(ln) for ln in p.read_text(encoding="utf-8").splitlines() if ln.strip()]
+    return [json.loads(ln) for ln in p.read_text(encoding="utf-8").splitlines()
+            if ln.strip()]
 
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="hyp01_eligibility")
-    ap.add_argument("--registry", required=True)
+    ap.add_argument("--registry-root", required=True,
+                    help="directory containing the canonical registry.jsonl")
+    ap.add_argument("--pre-event-markers", required=True,
+                    help="JSONL of PRE_EVENT_CAPTURE stage markers")
     ap.add_argument("--gst-legs", required=True)
     ap.add_argument("--d1-legs", required=True)
-    ap.add_argument("--out", help="write the status document here (append-only)")
+    ap.add_argument("--out", help="write the status document here")
     a = ap.parse_args(argv)
     try:
-        status = run_driver(_load_jsonl(Path(a.registry)),
+        status = run_driver(Path(a.registry_root),
+                            _load_jsonl(Path(a.pre_event_markers)),
                             _load_jsonl(Path(a.gst_legs)),
                             _load_jsonl(Path(a.d1_legs)))
     except JoinRefusal as e:

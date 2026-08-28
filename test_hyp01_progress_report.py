@@ -77,26 +77,39 @@ def make_fixture(tmp: Path) -> Path:
     (root / "Live Signal Engine" / "Market_Response_Event_Registry").mkdir(parents=True)
     lse = root / "Live Signal Engine"
 
-    # 4 event rows exercising each decidable branch, plus a non-event row.
+    # Canonical REGISTRATION rows exercising each decidable branch. row_type is
+    # REGISTRATION -- the schema EventRegistryRow actually validates. The
+    # invented type "event" appears nowhere.
     spec = [("AMC", "verified"), ("BMO", "verified"),
             ("INTRADAY", "verified"), ("AMC", "pending")]
     rows = []
     for i, (session, status) in enumerate(spec):
         rec = {
-            "row_id": i + 1,
-            "row_type": "event",
+            "row_id": f"EVT{i:04d}-REG-001",
+            "row_type": "REGISTRATION",
             "event_id": f"EVT{i:04d}",
             "ticker": ["AAPL", "MSFT", "NVDA", "AMZN"][i],
             "earnings_date": f"2026-09-{i + 1:02d}",
             "release_market_session": session,
-            "expected_response_session": session,
+            "expected_response_session": f"2026-09-{i + 2:02d}",
             "verification_status": status,
         }
         rec.update(SECRETS)  # measurements deliberately embedded
         rows.append(rec)
-    # one unverified, non-event row
-    rows.append({"row_id": 99, "row_type": "amendment", "event_id": "EVT9999",
-                 "verification_status": "verified", **SECRETS})
+    # A canonical AMENDMENT correcting event 3 from pending to verified. It must
+    # fold into that event, never appear as a fifth event.
+    rows.append({
+        "row_id": "EVT0003-AMD-001",
+        "row_type": "AMENDMENT",
+        "amends_row_id": "EVT0003-REG-001",
+        "event_id": "EVT0003",
+        "ticker": "AMZN",
+        "earnings_date": "2026-09-04",
+        "release_market_session": "AMC",
+        "expected_response_session": "2026-09-05",
+        "verification_status": "verified",
+        **SECRETS,
+    })
 
     (lse / "Market_Response_Event_Registry" / "registry.jsonl").write_text(
         "\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8")
@@ -144,7 +157,7 @@ def main() -> int:
         check("1c. SAFE_EVENT_KEYS is a whitelist, not a blacklist",
               isinstance(R.SAFE_EVENT_KEYS, frozenset) and
               "gst_zscore" not in R.SAFE_EVENT_KEYS)
-        rows, _ = R.load_registry(root)
+        rows, _, _amd = R.load_registry(root)
         check("1d. loaded registry rows carry only whitelisted keys",
               all(set(r) <= R.SAFE_EVENT_KEYS for r in rows),
               str([sorted(set(r) - R.SAFE_EVENT_KEYS) for r in rows]))
@@ -162,17 +175,34 @@ def main() -> int:
         check("2e. every registered reason code is present in the tally",
               all(r in excl for r in R.REASONS),
               str([r for r in R.REASONS if r not in excl]))
-        check("2f. the pending event and the non-event row count as NOT_ENROLLED",
-              excl["NOT_ENROLLED"] == 2, str(excl["NOT_ENROLLED"]))
+        check("2f. no verified REGISTRATION is mislabelled NOT_ENROLLED",
+              excl["NOT_ENROLLED"] == 0, str(excl["NOT_ENROLLED"]))
+        check("2f2. the amendment folds in; 4 effective events, not 5",
+              rep["effective_events_seen"] == 4
+              and rep["amendment_rows_folded"] == 1,
+              f"seen={rep['effective_events_seen']} amd={rep['amendment_rows_folded']}")
         check("2g. the INTRADAY row is MEASUREMENT_INCOMPATIBLE_INTRADAY",
               excl["MEASUREMENT_INCOMPATIBLE_INTRADAY"] == 1,
               str(excl["MEASUREMENT_INCOMPATIBLE_INTRADAY"]))
         check("2h. undecidable rows are flagged, not guessed",
-              excl["UNDETERMINED_REQUIRES_OUTCOME_CAPTURE"] == 2,
+              excl["UNDETERMINED_REQUIRES_OUTCOME_CAPTURE"] == 3,
               str(excl["UNDETERMINED_REQUIRES_OUTCOME_CAPTURE"]))
-        check("2i. exclusions + eligible == registry rows seen",
+        check("2h2. the amended event is enrolled via its effective status",
+              excl["STRUCTURAL_REGISTRY_PROBLEM"] == 0,
+              str(excl["STRUCTURAL_REGISTRY_PROBLEM"]))
+        check("2i. exclusions + eligible == effective events seen",
               sum(excl.values()) + rep["eligible_event_count"] ==
-              rep["registry_rows_seen"])
+              rep["effective_events_seen"])
+        # The needle is assembled from parts so this assertion does not match
+        # itself when it scans its own source file.
+        needle = '"row_type"' + ': "' + "event" + '"'
+        prod = (Path(__file__).resolve().parent / "tools"
+                / "hyp01_progress_report.py").read_text(encoding="utf-8")
+        mine = Path(__file__).read_text(encoding="utf-8")
+        check("2i2. no fixture or production code assumes row_type 'event'",
+              needle not in prod and needle not in mine
+              and '"event"' not in prod,
+              f"prod={needle in prod} test={needle in mine}")
         check("2j. captured panel dates read from filenames only",
               rep["captured_panel_dates"] == ["2026-08-26", "2026-08-27"])
         check("2k. missing artifact detected",

@@ -67,10 +67,18 @@ REQUIRED_ARTIFACTS = (
 # Identity/provenance keys that may be read. Anything not listed is treated as a
 # measurement and is never touched. Whitelist, not blacklist, so a new
 # measurement column added upstream cannot leak by default.
+from gst_market_response.event_registry import (  # noqa: E402
+    HumanVerifiedEventRegistry,
+)
+
 SAFE_EVENT_KEYS = frozenset({
     "event_id", "ticker", "earnings_date", "expected_response_session",
     "release_market_session", "verification_status", "row_type", "row_id",
 })
+
+
+ROW_REGISTRATION = "REGISTRATION"
+ROW_AMENDMENT = "AMENDMENT"
 
 
 def _safe(record: dict) -> dict:
@@ -78,20 +86,47 @@ def _safe(record: dict) -> dict:
     return {k: v for k, v in record.items() if k in SAFE_EVENT_KEYS}
 
 
-def load_registry(root: Path) -> tuple[list[dict], str | None]:
-    p = root / "Live Signal Engine/Market_Response_Event_Registry/registry.jsonl"
+def load_registry(root: Path) -> tuple[list[dict], str | None, int]:
+    """The canonical EFFECTIVE registry view: one row per event, amendments
+    folded in.
+
+    The fold is HumanVerifiedEventRegistry.effective_row() -- the canonical
+    implementation, called directly -- so this reporter and the eligibility
+    driver cannot drift apart. Rows are projected onto SAFE_EVENT_KEYS
+    immediately on ingest, so the redaction guarantee is unaffected by reading
+    through the registry class.
+
+    Returns (effective_rows, error, amendment_row_count).
+    """
+    reg_dir = root / "Live Signal Engine/Market_Response_Event_Registry"
+    p = reg_dir / "registry.jsonl"
     if not p.exists():
-        return [], f"missing: {p.relative_to(root).as_posix()}"
+        return [], f"missing: {p.relative_to(root).as_posix()}", 0
+    # Constructed only after confirming the log exists, so the constructor's
+    # mkdir(exist_ok=True) can never create anything: this tool stays read-only.
+    registry = HumanVerifiedEventRegistry(reg_dir)
+    try:
+        raw = registry.read_all()
+    except json.JSONDecodeError:
+        return [], "registry.jsonl contains an unparseable line", 0
+
+    amendments = sum(1 for r in raw if r.get("row_type") == ROW_AMENDMENT)
+    order: list[str] = []
+    for r in raw:
+        eid = r.get("event_id")
+        if eid and eid not in order:
+            order.append(eid)
+
     rows = []
-    for line in p.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line:
+    for eid in order:
+        effective = registry.effective_row(eid)
+        if effective is None:
+            # Amendment rows with no base REGISTRATION. Surfaced as a structural
+            # problem rather than counted as an event.
+            rows.append({"event_id": eid, "row_type": None})
             continue
-        try:
-            rows.append(_safe(json.loads(line)))
-        except json.JSONDecodeError:
-            return rows, "registry.jsonl contains an unparseable line"
-    return rows, None
+        rows.append(_safe(effective))
+    return rows, None, amendments
 
 
 def captured_dates(root: Path) -> list[str]:
@@ -117,18 +152,28 @@ def classify(events: list[dict]) -> tuple[int, Counter]:
     """
     excl = Counter({r: 0 for r in REASONS})
     excl["UNDETERMINED_REQUIRES_OUTCOME_CAPTURE"] = 0
+    excl["STRUCTURAL_REGISTRY_PROBLEM"] = 0
     eligible = 0
     for e in events:
-        if e.get("row_type") not in (None, "event", "EVENT"):
+        # Canonical row types are REGISTRATION and AMENDMENT. Amendments are
+        # already folded away by the effective view, so anything reaching here
+        # that is not a REGISTRATION is a structural problem -- NOT a scientific
+        # exclusion, and certainly not NOT_ENROLLED.
+        if e.get("row_type") != ROW_REGISTRATION:
+            excl["STRUCTURAL_REGISTRY_PROBLEM"] += 1
+            continue
+        if str(e.get("verification_status", "")).lower() != "verified":
             excl["NOT_ENROLLED"] += 1
             continue
-        if e.get("verification_status") not in ("verified", "VERIFIED"):
-            excl["NOT_ENROLLED"] += 1
-            continue
-        session = (e.get("release_market_session") or
-                   e.get("expected_response_session") or "")
-        if session.upper() not in ("BMO", "AMC"):
-            excl["MEASUREMENT_INCOMPATIBLE_INTRADAY"] += 1
+        # S-7 reads the registered release session ONLY. expected_response_session
+        # is a DATE and was never a session; using it as a fallback made every
+        # event look intraday.
+        session = str(e.get("release_market_session") or "").upper()
+        if session not in ("BMO", "AMC"):
+            if session == "":
+                excl["STRUCTURAL_REGISTRY_PROBLEM"] += 1
+            else:
+                excl["MEASUREMENT_INCOMPATIBLE_INTRADAY"] += 1
             continue
         # Steps 3-6 need the market-response capture legs, which are outcome
         # data. Not read here, by design.
@@ -141,14 +186,15 @@ def missing_artifacts(root: Path) -> list[str]:
 
 
 def build_report(root: Path) -> dict:
-    events, reg_err = load_registry(root)
+    events, reg_err, amendment_rows = load_registry(root)
     eligible, excl = classify(events)
     dates = captured_dates(root)
     return {
         "binding_target": BINDING_TARGET,
         "eligible_event_count": eligible,
         "remaining_until_target": max(0, BINDING_TARGET - eligible),
-        "registry_rows_seen": len(events),
+        "effective_events_seen": len(events),
+        "amendment_rows_folded": amendment_rows,
         "registry_error": reg_err,
         "captured_panel_dates": dates,
         "captured_panel_date_count": len(dates),
@@ -161,6 +207,12 @@ def build_report(root: Path) -> dict:
             "UNDETERMINED_REQUIRES_OUTCOME_CAPTURE, never guessed.",
             "Reaching the target licenses a human freeze procedure; this tool "
             "does not freeze anything.",
+            "Registry rows are REGISTRATION and AMENDMENT. Amendments are folded "
+            "into one effective event by HumanVerifiedEventRegistry.effective_row() "
+            "and are never counted as separate events.",
+            "A verified REGISTRATION is enrolled. It may still lack the capture "
+            "legs a later gate needs; that is reported structurally, never as an "
+            "enrollment failure.",
         ],
     }
 
@@ -173,7 +225,8 @@ def render(rep: dict) -> str:
     L.append(f"  eligible events           : {rep['eligible_event_count']}")
     L.append(f"  binding target            : {rep['binding_target']}")
     L.append(f"  remaining until target    : {rep['remaining_until_target']}")
-    L.append(f"  registry rows seen        : {rep['registry_rows_seen']}")
+    L.append(f"  effective events seen     : {rep['effective_events_seen']}")
+    L.append(f"  amendment rows folded     : {rep['amendment_rows_folded']}")
     L.append(f"  captured panel dates      : {rep['captured_panel_date_count']}")
     for d in rep["captured_panel_dates"]:
         L.append(f"      {d}")

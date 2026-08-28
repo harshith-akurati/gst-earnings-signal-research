@@ -17,7 +17,8 @@ definition and proposes no threshold.
 | 2 | Pre-event attention/market snapshot | `gst_market_response/pipeline.py` (pre-event capture) | Implemented |
 | 3 | D1 market-response decomposition | `pipeline.capture_d1()` | Implemented |
 | 4 | Primary outcome `abs_overnight_gap` | `response_magnitude.apply_absolute_fields()` → `derivations.abs_or_none()` | Implemented — see §6 |
-| 5 | Exact GST ↔ D1 join | `tools/hyp01_eligibility.py` → `join_event()` | **Added by this PR** |
+| 4a | Pre-event module eligibility (S-2 evidence) | `stage_markers.build_stage_marker()` → `module_eligibility` | Implemented |
+| 5 | Exact registry ↔ marker ↔ GST ↔ D1 join | `tools/hyp01_eligibility.py` → `join_event()` | **Added by this PR** |
 | 6 | Eligibility ladder + count to 60 | `tools/hyp01_eligibility.py` → `run_driver()` | **Added by this PR** |
 | 7 | Human-readable progress report | `tools/hyp01_progress_report.py` | Added earlier on this branch |
 | 8 | Cohort freeze at event 60 | Eligibility rules §5 | **Human procedure.** Driver signals; it does not freeze |
@@ -30,10 +31,11 @@ Stages 1, 8, 9 and 10 are deliberately **not** automatable. Everything this PR a
 
 ```
 python tools/hyp01_eligibility.py \
-    --registry  <path>/registry.jsonl \
-    --gst-legs  <path>/gst_legs.jsonl \
-    --d1-legs   <path>/d1_legs.jsonl \
-    --out       <path>/GST_HYP01_ELIGIBILITY_STATUS.json
+    --registry-root      <dir containing the canonical registry.jsonl> \
+    --pre-event-markers  <path>/pre_event_markers.jsonl \
+    --gst-legs           <path>/gst_legs.jsonl \
+    --d1-legs            <path>/d1_legs.jsonl \
+    --out                <path>/GST_HYP01_ELIGIBILITY_STATUS.json
 ```
 
 Exit codes: `0` a status document was produced; `2` the record set is malformed and the driver
@@ -53,13 +55,13 @@ rearranged.**
 
 | Step | Question | Disposition if failed |
 |---|---|---|
-| S-1 | Is the event human-verified and enrolled? | `NOT_ENROLLED` |
-| S-2 | Is it in the core attention/response family? | `CLASS_INELIGIBLE` |
+| S-1 | Is the **effective** registration human-verified? | `NOT_ENROLLED` |
+| S-2 | Does the **persisted pre-event module eligibility** admit the core family? | `CLASS_INELIGIBLE` |
 | S-3 | Do all six panel fields pass the strict v0.2 core gate? | `CORE_GATE_FAILED` |
 | S-4 | Is the D1 decomposition complete? | `D1_GATE_FAILED` |
 | S-5 | Is `gst_zscore` present with a successful status and valid provenance? | `GST_PROVENANCE_FAILED` |
 | S-6 | Is `abs_overnight_gap` present with valid market-data provenance? | `OUTCOME_MISSING` |
-| S-7 | Is the release BMO or AMC? | `MEASUREMENT_INCOMPATIBLE_INTRADAY` |
+| S-7 | Is the **registered** release session BMO or AMC? | `MEASUREMENT_INCOMPATIBLE_INTRADAY` |
 | S-8 | Is it within rank 60 of the frozen order? | `EXTENSION_COHORT` |
 
 **First-failure attribution is part of the audit record.** An event failing several gates receives the
@@ -69,14 +71,52 @@ would change the recorded reason, and §1 requires that *"every disposition is r
 registered sequence is therefore implemented literally, and `REGISTERED_GATE_ORDER` in
 `tools/hyp01_eligibility.py` is asserted against actual behaviour by test E15.
 
-**Where structural refusals sit.** S-1 and S-2 read the registration only, so they are evaluable even
-on a malformed record set — and when they fail they give the more informative answer (the event is not
-in the study at all). Every later gate reads the joined legs, so a join refusal surfaces between S-2
-and S-3: at the first gate that cannot be evaluated without the missing data, neither earlier nor
-later. Duplicate detection precedes everything and raises for the whole run.
+**Where structural refusals sit.** Only **S-1** reads the registration alone. It evaluates the
+*effective* enrollment decision — the base `REGISTRATION` row with every `AMENDMENT` folded in — so it
+is decidable even when no capture artifact exists, and when it fails it gives the most informative
+answer: the event is not in the study at all.
 
-**Ordering for step 8** is `(response_session_date ASC, event_id ASC)`, per §2 — deterministic and
-independent of arrival order, which test D4 confirms by reversing every input list.
+**S-2 is not a registration check.** Its evidence is the module-eligibility block persisted on the
+pre-event stage marker, so it needs a joined artifact exactly like S-3–S-7 do. The correct order is
+therefore:
+
+1. **S-1** — effective human enrollment, from the folded registry row.
+2. **Structural availability** — the exact join plus the required pre-event marker, GST leg and D1
+   leg must all be present and readable.
+3. **S-2** — persisted module eligibility, via the locked mechanizer.
+4. **S-3–S-7** — the joined evidence.
+5. **S-8** — deterministic rank.
+
+A structural refusal surfaces at step 2: after enrollment, before S-2. Duplicate detection and
+registry-shape validation precede everything and raise for the whole run.
+
+**A structural failure is not a scientific exclusion.** A refusal means an input artifact is absent or
+unreadable, so no gate could be evaluated and no disposition may be assigned; the event is neither
+eligible nor scientifically excluded until an operator fixes the input.
+
+**Ordering for step 8** is `(response_session_date ASC, event_id ASC)`, per §2. The date is the
+registry's `expected_response_session`, which `register_verified_event()` computes mechanically via
+`exchange_calendar.compute_expected_next_full_trading_session_xnys()` — never hand-entered and never
+taken from a capture leg. Ordering is independent of arrival order, which test D5 confirms by
+reversing every input list.
+
+## 3a. Canonical registry handling
+
+Registry rows are **`REGISTRATION`** and **`AMENDMENT`** — the row types `EventRegistryRow` validates.
+There is no `event` row type and never was; a row carrying one is refused, not accepted.
+
+- Exactly **one** base `REGISTRATION` per `event_id`. A second refuses.
+- Amendments are folded by **`HumanVerifiedEventRegistry.effective_row()`** — the canonical
+  implementation, called directly. No second folding algorithm exists in this tool.
+- An amendment is a **correction to its event**, never another event. Counts are per effective event.
+- Every `amends_row_id` must resolve to a row of the same event. An orphan refuses.
+- An amendment may correct timing, sourcing and status. It may **never** change `event_id`, `ticker`
+  or `fiscal_period`; `effective_row()` would fold such a change silently, so it is refused first.
+- The base row's bytes are never rewritten — the registry is append-only.
+- **Nothing is defaulted.** A required registry field that is absent or blank refuses.
+
+Enrollment status and release timing both come from the **effective** row, so a correction recorded by
+amendment is honoured.
 
 ## 4. Refusals
 
@@ -91,6 +131,16 @@ be assigned, and an operator must fix the input.
 | `JOIN_REFUSED_MISSING_GST_LEG` / `..._D1_LEG` | one leg of the pair is absent | per event |
 | `JOIN_REFUSED_UNEXPECTED_SCHEMA_FIELD` | a leg carries a column not on the whitelist | per event |
 | `JOIN_REFUSED_NO_CAPTURE_TIME` | a leg has no `captured_at_utc` | per event |
+| `JOIN_REFUSED_UNKNOWN_ROW_TYPE` | a registry row is neither REGISTRATION nor AMENDMENT | whole run raises |
+| `JOIN_REFUSED_DUPLICATE_BASE_REGISTRATION` | two REGISTRATION rows for one event | whole run raises |
+| `JOIN_REFUSED_NO_BASE_REGISTRATION` | an AMENDMENT with no base registration | whole run raises |
+| `JOIN_REFUSED_ORPHAN_AMENDMENT` | `amends_row_id` resolves to nothing, or to another event | whole run raises |
+| `JOIN_REFUSED_ILLEGAL_IDENTITY_CHANGE` | an amendment rewrites event_id, ticker or fiscal_period | whole run raises |
+| `JOIN_REFUSED_MISSING_REGISTRY_FIELD` | a required registry field is absent or blank | whole run raises |
+| `JOIN_REFUSED_MISSING_PRE_EVENT_MARKER` | no pre-event marker carries the S-2 decision | per event |
+| `JOIN_REFUSED_MISSING_MODULE_ELIGIBILITY` | the marker's `module_eligibility` block is null | per event |
+| `JOIN_REFUSED_UNREADABLE_MODULE_ELIGIBILITY` | legacy or malformed block (`LegacyRecordError`) | per event |
+| `JOIN_REFUSED_MARKER_IDENTITY_MISMATCH` | the marker's event, stage or ticker disagrees | per event |
 
 Duplication raises for the whole run because there is no correct per-event answer — choosing one of
 two legs would be a guess. A stray column or a missing leg affects one event, so it refuses that
@@ -169,8 +219,8 @@ rule `D16 = NO_PROJECT_DERIVED_POWER_CLAIM` prohibits.
 ## 8. Verification
 
 ```
-python test_hyp01_eligibility.py        # 63 checks — join, ladder, gate order, provenance, non-disclosure
-python test_hyp01_progress_report.py    # 22 checks — redaction, deterministic counting
+python test_hyp01_eligibility.py        # 91 checks — registry, S-2, join, ladder, gate order, provenance
+python test_hyp01_progress_report.py    # 25 checks — redaction, effective registry, deterministic counting
 ```
 
 Both suites are fully offline: a socket guard fails the run on any connection attempt. Every fixture
@@ -194,3 +244,5 @@ increment the count, or to contribute to the event-60 freeze.
 - No locked scientific definition was changed; no SESOI was selected or recommended.
 - The live collector, the scheduled task and AVG were not touched.
 - PR #40 remains a draft and is not marked ready.
+- No registry row was written or amended; the canonical registry is read-only to this path.
+- The corrected eligibility driver has never been executed against a real prospective record.
