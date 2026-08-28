@@ -59,7 +59,8 @@ if str(Path(__file__).resolve().parent) not in sys.path:
 
 from gst_market_response.event_record import (  # noqa: E402
     FAILURE_STAGE_D1, FAILURE_STAGE_PRE_EVENT, EventStore,
-    InvalidStateTransitionError, select_stage_record, validate_transition,
+    InvalidStateTransitionError, partial_failure_stage, select_stage_record,
+    validate_transition,
 )
 from gst_market_response.exchange_calendar import (  # noqa: E402
     compute_expected_next_full_trading_session_xnys,
@@ -86,8 +87,27 @@ JoinRefusal = EL.JoinRefusal
 PLAN_FILENAME = "{event_id}_OPERATIONS_PLAN.json"
 
 # The lifecycle states each stage's evidence may legitimately come from.
-PRE_EVENT_OK_STATES = ("PRE_EVENT_CAPTURED",)
-D1_OK_STATES = ("D1_COMPLETE",)
+#
+# A stage-specific PARTIAL IS evidence, not a missing state. The production
+# writers put the stage's own fields on it, and the production readers hand it
+# back deliberately:
+#
+#   pipeline.capture_pre_event_and_option_benchmark_v0_2() appends PARTIAL with
+#       the module-eligibility block and the strict-core fields when the core
+#       gate fails, tagged failure_stage="pre_event";
+#   pipeline.capture_d1() appends PARTIAL with the incomplete D1 fields when the
+#       decomposition gate fails, tagged failure_stage="d1";
+#   event_record.select_stage_record() returns the stage's OWN PARTIAL, and
+#       never one belonging to another stage;
+#   stage_markers._stage_state_is_allowed() permits a marker for exactly that
+#       PARTIAL.
+#
+# Rejecting them turned scientific first failures into structural missing-state
+# refusals, which is the defect this module previously had. The stage guard is
+# now enforced by partial_failure_stage(), so a PARTIAL belonging to a DIFFERENT
+# stage is still refused.
+PRE_EVENT_OK_STATES = ("PRE_EVENT_CAPTURED", "PARTIAL")
+D1_OK_STATES = ("D1_COMPLETE", "PARTIAL")
 
 
 def _sha256_file(p: Path) -> str:
@@ -168,6 +188,15 @@ def _stage_record(states: list[dict], stage_key: str, event_id: str,
         raise JoinRefusal(missing_code, event_id,
                           f"{stage_key} stage is {record.get('state')!r}, "
                           f"not one of {allowed_states}")
+    if record.get("state") == "PARTIAL":
+        # select_stage_record() already refuses another stage's PARTIAL, but the
+        # attribution is re-derived here so a wrong-stage record can never be
+        # reassigned to this stage by a future caller.
+        idx = states.index(record)
+        owner = partial_failure_stage(states, idx)
+        if owner != stage_key:
+            raise JoinRefusal(missing_code, event_id,
+                              f"PARTIAL belongs to stage {owner!r}, not {stage_key!r}")
     if not record.get("fields"):
         raise JoinRefusal(missing_code, event_id, f"{stage_key} record carries no fields")
     return record
@@ -379,6 +408,9 @@ def _d1_leg(effective: dict, d1_state: dict, d1_marker: dict, timing: dict,
         "provenance_path": marker_file.as_posix(),
         "provenance_sha256": _sha256_file(marker_file),
     }
+    # A stage-specific D1 PARTIAL carries whichever interval fields the capture
+    # did produce. They are copied verbatim; S-4 then decides. Absent fields
+    # stay absent -- nothing is defaulted to make the gate pass.
     for k in EL.D1_REQUIRED_FIELDS:
         if k in f:
             leg[k] = f[k]
@@ -405,109 +437,141 @@ def _d1_leg(effective: dict, d1_state: dict, d1_marker: dict, timing: dict,
 # Public entry point
 # ---------------------------------------------------------------------------
 
+def evaluate_event(effective: dict, store: EventStore, marker_root: Path,
+                   plan_root: Path) -> tuple:
+    """Walk ONE event down the registered ladder, opening evidence only as far
+    as the ladder actually reaches.
+
+    Returns (eligible, reason_or_None, sort_record_or_None) -- exactly one
+    terminal outcome.
+
+    The ladder is progressive on purpose. Requiring every downstream artifact
+    before classifying meant an event that fails S-2 or S-3 was reported as a
+    structural missing-D1 refusal, and a stage-specific PARTIAL -- which the
+    production writers create precisely to preserve the failing stage's fields
+    -- was reported as a missing state. Both hid the earlier, registered
+    scientific disposition behind a later structural one.
+
+    Short-circuiting is therefore a correctness property, not an optimisation:
+    once a gate fails, no later artifact is opened, so no later artifact's
+    absence can overwrite the answer.
+    """
+    eid = effective["event_id"]
+
+    # ---- S-1 -------------------------------------------------------------
+    # Preempts everything. No capture artifact is opened for a non-enrolled
+    # registration, and it never receives a structural refusal.
+    if not EL.is_enrolled(effective):
+        return (False, EL.R_NOT_ENROLLED, None)
+
+    # ---- PRE_EVENT evidence, for S-2 and S-3 -----------------------------
+    try:
+        states = read_state_log(store, eid)
+        pre_state = _stage_record(states, FAILURE_STAGE_PRE_EVENT, eid,
+                                  PRE_EVENT_OK_STATES, EL.J_MISSING_PRE_EVENT_STATE)
+        pre_marker = read_marker(marker_root, eid, STAGE_PRE_EVENT, pre_state,
+                                 EL.J_MISSING_PRE_EVENT_MARKER)
+        eligibility = EL.module_eligibility_for(effective, EL.project_marker(pre_marker))
+    except JoinRefusal as e:
+        return (False, e.code, None)
+
+    gst_leg = _gst_leg(effective, pre_state,
+                       marker_path(marker_root, eid, STAGE_PRE_EVENT))
+
+    # ---- S-2, then S-3 ---------------------------------------------------
+    if not EL.gate_s2(eligibility):
+        return (False, EL.R_CLASS_INELIGIBLE, None)
+    if not EL.gate_s3(gst_leg):
+        return (False, EL.R_CORE_GATE_FAILED, None)
+
+    # ---- D1 evidence, only now -------------------------------------------
+    try:
+        d1_state = _stage_record(states, FAILURE_STAGE_D1, eid,
+                                 D1_OK_STATES, EL.J_MISSING_D1_STATE)
+        d1_marker = read_marker(marker_root, eid, STAGE_D1, d1_state,
+                                EL.J_MISSING_D1_MARKER)
+        plan = read_operations_plan(plan_root, eid)
+        timing = validate_d1_response_window(effective, plan, d1_state)
+    except JoinRefusal as e:
+        return (False, e.code, None)
+
+    d1_leg = _d1_leg(effective, d1_state, d1_marker, timing,
+                     marker_path(marker_root, eid, STAGE_D1))
+
+    # ---- S-4 .. S-7 ------------------------------------------------------
+    if not EL.gate_s4(d1_leg):
+        return (False, EL.R_D1_GATE_FAILED, None)
+    if not EL.gate_s5(gst_leg):
+        return (False, EL.R_GST_PROVENANCE_FAILED, None)
+    if not EL.gate_s6(d1_leg):
+        return (False, EL.R_OUTCOME_MISSING, None)
+    if not EL.gate_s7(effective.get("release_market_session")):
+        return (False, EL.R_MEASUREMENT_INCOMPATIBLE_INTRADAY, None)
+
+    # S-8 is applied by tally_outcomes() over the ordered candidate set.
+    return (True, None, {"event_id": eid,
+                         "response_session_date": timing["response_session_date"]})
+
+
 def load_canonical_evidence(snapshot, event_store_root: Path,
                             marker_root: Path, plan_root: Path) -> dict:
-    """Assemble the evidence the eligibility driver consumes, from canonical
-    roots, for ONE registry snapshot.
+    """Walk every event in ONE registry snapshot down the progressive ladder.
 
-    S-1 PREEMPTS ALL EVIDENCE WORK. A registration that is not verified is
-    skipped entirely here: its event-store log, stage markers, operations plan,
-    GST evidence and D1 evidence are never opened, and it is given NO refusal.
-    The driver classifies it as NOT_ENROLLED and nothing else. Inspecting a
-    non-enrolled event's artifacts would both violate the gate order and give
-    it a second terminal category.
-
-    Returns {"markers": [...], "gst_legs": [...], "d1_legs": [...],
-             "refusals": {event_id: JoinRefusal}, "timing": {...},
+    Returns {"outcomes": {event_id: (eligible, reason, sort_record)},
+             "eligible": [event_id], "scientific": {event_id: code},
+             "structural": {event_id: code},
              "skipped_not_enrolled": [event_id]}.
 
-    A per-event refusal is CARRIED, not raised, and is keyed by event_id so the
-    driver can thread it into its single classification flow. It is never added
-    to a tally here.
+    Exactly one terminal outcome per event; nothing is tallied here.
     """
     store = EventStore(Path(event_store_root))
     marker_root = Path(marker_root)
     plan_root = Path(plan_root)
 
-    markers: list[dict] = []
-    gst_legs: list[dict] = []
-    d1_legs: list[dict] = []
-    refusals: dict[str, JoinRefusal] = {}
-    timings: dict[str, dict] = {}
+    outcomes: dict[str, tuple] = {}
+    eligible: list[str] = []
+    scientific: dict[str, str] = {}
+    structural: dict[str, str] = {}
     skipped: list[str] = []
 
     for effective in snapshot.rows:
         eid = effective["event_id"]
-
-        # --- S-1 gate, before any artifact is touched ----------------------
-        if not EL.is_enrolled(effective):
+        outcome = evaluate_event(effective, store, marker_root, plan_root)
+        outcomes[eid] = outcome
+        ok, reason, _rec = outcome
+        if ok:
+            eligible.append(eid)
+        elif reason == EL.R_NOT_ENROLLED:
             skipped.append(eid)
-            continue
+        elif reason in EL.REASONS:
+            scientific[eid] = reason
+        else:
+            structural[eid] = reason
 
-        try:
-            states = read_state_log(store, eid)
-
-            pre_state = _stage_record(states, FAILURE_STAGE_PRE_EVENT, eid,
-                                      PRE_EVENT_OK_STATES, EL.J_MISSING_PRE_EVENT_STATE)
-            d1_state = _stage_record(states, FAILURE_STAGE_D1, eid,
-                                     D1_OK_STATES, EL.J_MISSING_D1_STATE)
-
-            pre_marker = read_marker(marker_root, eid, STAGE_PRE_EVENT, pre_state,
-                                     EL.J_MISSING_PRE_EVENT_MARKER)
-            d1_marker = read_marker(marker_root, eid, STAGE_D1, d1_state,
-                                    EL.J_MISSING_D1_MARKER)
-
-            plan = read_operations_plan(plan_root, eid)
-            timing = validate_d1_response_window(effective, plan, d1_state)
-
-            markers.append(pre_marker)
-            gst_legs.append(_gst_leg(effective, pre_state,
-                                     marker_path(marker_root, eid, STAGE_PRE_EVENT)))
-            d1_legs.append(_d1_leg(effective, d1_state, d1_marker, timing,
-                                   marker_path(marker_root, eid, STAGE_D1)))
-            timings[eid] = timing
-        except JoinRefusal as e:
-            refusals[eid] = e
-
-    return {"markers": markers, "gst_legs": gst_legs, "d1_legs": d1_legs,
-            "refusals": refusals, "timing": timings,
-            "skipped_not_enrolled": skipped}
+    return {"outcomes": outcomes, "eligible": eligible, "scientific": scientific,
+            "structural": structural, "skipped_not_enrolled": skipped}
 
 
 def run_canonical(registry_root: Path, event_store_root: Path, marker_root: Path,
                   plan_root: Path) -> dict:
     """Canonical roots in, redacted status document out.
 
-    ONE registry snapshot is taken here and threaded through evidence assembly,
-    classification and ordering, so a single invocation can never mix two
-    registry states.
+    ONE registry snapshot is taken here and threaded through the progressive
+    ladder and the tally, so a single invocation can never mix two registry
+    states.
     """
     snapshot = EL.load_registry_snapshot(Path(registry_root))
-    evidence = load_canonical_evidence(snapshot, event_store_root, marker_root,
-                                       plan_root)
+    ev = load_canonical_evidence(snapshot, event_store_root, marker_root, plan_root)
 
-    # The adapter's per-event refusals go INTO the driver's single
-    # classification flow. They are deliberately NOT added to the tally
-    # afterwards: doing that was the double-counting defect, because the driver
-    # also saw the absent legs and recorded a second generic refusal.
-    status = EL.run_driver(snapshot, evidence["markers"], evidence["gst_legs"],
-                           evidence["d1_legs"], refusals=evidence["refusals"])
-
-    status["adapter"] = {
-        "source": "canonical",
-        "registry_root": Path(registry_root).as_posix(),
-        "event_store_root": Path(event_store_root).as_posix(),
-        "marker_root": Path(marker_root).as_posix(),
-        "operations_plan_root": Path(plan_root).as_posix(),
-        "events_with_complete_evidence": len(evidence["d1_legs"]),
-        "events_refused_structurally": len(evidence["refusals"]),
-        "events_stopped_at_s1_not_enrolled": len(evidence["skipped_not_enrolled"]),
-        "d1_timing_validated_event_count": len(evidence["timing"]),
-    }
-    status["notes"] = list(status["notes"]) + [
+    status = EL.tally_outcomes(snapshot, ev["outcomes"], extra_notes=(
         "Every leg was derived from canonical artifacts by "
         "tools/hyp01_canonical_adapter.py. No hand-prepared evidence file is "
         "accepted by this command.",
+        "The ladder is walked progressively: evidence is opened only as far as "
+        "the ladder reaches, so a later missing artifact can never replace an "
+        "earlier scientific disposition.",
+        "A stage-specific PARTIAL record is scientific evidence, not a missing "
+        "state; a PARTIAL belonging to another stage is still refused.",
         "S-1 preempts evidence assembly: a registration that is not verified has "
         "no event-store log, marker, plan or capture leg opened, and receives "
         "NOT_ENROLLED and nothing else.",
@@ -516,7 +580,19 @@ def run_canonical(registry_root: Path, event_store_root: Path, marker_root: Path
         "SPECIFICATION GAP: no committed artifact states a LATEST permissible D1 "
         "capture instant, so no upper bound is enforced. Inventing a tolerance "
         "was refused; closing this is a human decision.",
-    ]
+    ))
+
+    status["adapter"] = {
+        "source": "canonical",
+        "registry_root": Path(registry_root).as_posix(),
+        "event_store_root": Path(event_store_root).as_posix(),
+        "marker_root": Path(marker_root).as_posix(),
+        "operations_plan_root": Path(plan_root).as_posix(),
+        "events_eligible": len(ev["eligible"]),
+        "events_excluded_scientifically": len(ev["scientific"]),
+        "events_refused_structurally": len(ev["structural"]),
+        "events_stopped_at_s1_not_enrolled": len(ev["skipped_not_enrolled"]),
+    }
     return status
 
 

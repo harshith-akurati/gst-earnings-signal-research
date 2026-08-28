@@ -216,12 +216,60 @@ Every effective event leaves the run with **exactly one** terminal category: eli
 
   A violation raises `ReconciliationError`; the CLI exits **3** and writes nothing.
 
-**Reachability note.** `CORE_GATE_FAILED`, `CLASS_INELIGIBLE`, `D1_GATE_FAILED` and `OUTCOME_MISSING`
-cannot be produced through the canonical writers: a failing strict-core or D1 gate drives the event to
-`PARTIAL`, which `validate_transition()` treats as terminal, so no `D1_COMPLETE` record is ever
-written and the adapter refuses structurally instead. The canonically reachable scientific exclusions
-are S-7 (`MEASUREMENT_INCOMPATIBLE_INTRADAY`) and S-5 (`GST_PROVENANCE_FAILED`). All of them remain
-reachable at the primitive level and are exercised in `test_hyp01_eligibility.py`.
+## 3d. The ladder is walked progressively
+
+Evidence is opened only as far as the ladder actually reaches. Once a gate fails, no later artifact is
+opened, so **a later missing artifact can never overwrite an earlier scientific disposition.**
+
+| Order | Evidence opened | Gates evaluated |
+|---|---|---|
+| 1 | effective registry row only | **S-1** |
+| 2 | event-store chronology, PRE_EVENT stage record, PRE_EVENT marker | **S-2**, then **S-3** |
+| 3 | D1 stage record, D1 marker, operations plan, timing binding | **S-4**, **S-5**, **S-6**, **S-7** |
+| 4 | (ordered candidate set) | **S-8** |
+
+**A stage-specific `PARTIAL` is evidence, not a missing state.** The production writers create it
+precisely to preserve the failing stage's fields, and the production readers hand it back deliberately:
+
+- `pipeline.capture_pre_event_and_option_benchmark_v0_2()` appends `PARTIAL` carrying the
+  module-eligibility block and the strict-core fields, tagged `failure_stage="pre_event"`;
+- `pipeline.capture_d1()` appends `PARTIAL` carrying the incomplete D1 fields, tagged
+  `failure_stage="d1"`;
+- `event_record.select_stage_record()` returns the stage's **own** `PARTIAL` and never another
+  stage's;
+- `stage_markers._stage_state_is_allowed()` permits a marker for exactly that `PARTIAL`.
+
+Accepting them changes two classifications:
+
+| Artifact | Before | After |
+|---|---|---|
+| PRE_EVENT `PARTIAL` (strict core failed) | `JOIN_REFUSED_MISSING_PRE_EVENT_STATE` | **`CLASS_INELIGIBLE`** (S-2) |
+| D1 `PARTIAL` (decomposition failed) | `JOIN_REFUSED_MISSING_D1_STATE` | **`D1_GATE_FAILED`** (S-4) |
+
+A `PARTIAL` belonging to a **different** stage is still refused, and the attribution is re-derived with
+`partial_failure_stage()` so it can never be reassigned. Genuinely absent, malformed, contradictory or
+wrong-stage evidence still receives a structural refusal — a `PARTIAL` whose marker is missing stays
+`JOIN_REFUSED_MISSING_*_MARKER`, because the persisted S-2 evidence cannot be verified.
+
+### Disposition reachability, artifact-backed
+
+Determined empirically by constructing each case through the production writers on synthetic roots.
+
+| Disposition | Status | Basis |
+|---|---|---|
+| `NOT_ENROLLED` | **reachable** | a `REGISTRATION` with `verification_status != verified` |
+| `CLASS_INELIGIBLE` | **reachable** | PRE_EVENT `PARTIAL`; persisted `core_pre_event_eligible=False` |
+| `CORE_GATE_FAILED` | **logically redundant** | S-2 and S-3 mechanically consume the *same* strict-core decision: `evaluate_pre_event_modules_v0_2()` sets `core_pre_event_eligible = evaluate_strict_core_v0_2(fields).passed`, and the GST leg is built from those same persisted fields. Probe: `persisted core_pre_event_eligible == raw strict core passed` — always identical. S-2 therefore always fails first. **Gate retained** as a defensive re-check |
+| `D1_GATE_FAILED` | **reachable** | D1 `PARTIAL` with an invalid decomposition |
+| `GST_PROVENANCE_FAILED` | **reachable** | a captured pre-event record without `source_csv_path`/`source_csv_sha256` (neither is a strict-core field, so capture still succeeds) |
+| `OUTCOME_MISSING` | **logically redundant** | a valid `D1_COMPLETE` record necessarily contains the derived outcome: `capture_d1()` calls `apply_absolute_fields()` before the gate, and `overnight_gap` is required for `D1_COMPLETE`, so `abs_overnight_gap` is always present. A D1 `PARTIAL` fails S-4 first. **Gate retained** as a defensive re-check |
+| `MEASUREMENT_INCOMPATIBLE_INTRADAY` | **reachable** | an `INTRADAY` registered release session |
+| `EXTENSION_COHORT` | **reachable** | a 61st eligible event |
+
+No disposition is blocked by an implementation defect. The two redundant gates are **retained** — no
+governing amendment authorizes removing them — and both remain reachable at the primitive level in
+`test_hyp01_eligibility.py`. No inconsistent marker/state combination was manufactured to make a
+redundant disposition appear reachable.
 
 ## 4. Refusals
 
@@ -339,8 +387,8 @@ rule `D16 = NO_PROJECT_DERIVED_POWER_CLAIM` prohibits.
 
 ```
 python tools/hyp01_canonical_adapter.py --help   # the production command
-python test_hyp01_canonical_adapter.py  # 47 checks — canonical end-to-end, D1 timing
-python test_hyp01_first_failure_classification.py  # 40 checks — one event, one classification
+python test_hyp01_canonical_adapter.py  # 48 checks — canonical end-to-end, D1 timing
+python test_hyp01_first_failure_classification.py  # 57 checks — one event, one classification; progressive ladder
 python test_hyp01_eligibility.py        # 91 checks — registry, S-2, join, ladder, gate order, provenance
 python test_hyp01_progress_report.py    # 25 checks — redaction, effective registry, deterministic counting
 ```

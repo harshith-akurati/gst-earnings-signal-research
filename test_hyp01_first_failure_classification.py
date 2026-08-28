@@ -448,6 +448,114 @@ def main() -> int:
         ok = False
     check("9b. reconcile() accepts a correct tally", ok)
 
+    print("\n=== 10. progressive ladder: stage-specific PARTIAL is evidence ===")
+
+    # -- PRE_EVENT strict-core failure, written by the production writer -----
+    # capture_pre_event_and_option_benchmark_v0_2() appends PARTIAL tagged
+    # failure_stage="pre_event", carrying the module-eligibility block and the
+    # strict-core fields. write_stage_marker() is permitted for exactly that
+    # PARTIAL. The ladder must reach the registered SCIENTIFIC disposition.
+    r = Roots()
+    eid = build_event(r, "DELL", "FY27Q2", date(2026, 8, 3),
+                      core=core_fields(wiki_zscore=None), with_d1=False)
+    states = [x for x in r.es.read_all(eid) if x["record_type"] == "STATE"]
+    from gst_market_response.event_record import (                      # noqa: E402
+        FAILURE_STAGE_D1, FAILURE_STAGE_PRE_EVENT, partial_failure_stage,
+    )
+    check("10a. the production writer created a stage-specific PRE_EVENT PARTIAL",
+          states[-1]["state"] == "PARTIAL"
+          and partial_failure_stage(states, len(states) - 1) == FAILURE_STAGE_PRE_EVENT,
+          str([x["state"] for x in states]))
+    check("10b. the production marker writer created the PRE_EVENT marker",
+          marker_path(r.markers, eid, STAGE_PRE_EVENT).exists())
+
+    st, opened = status_with_open_audit(r)
+    check("10c. a PRE_EVENT PARTIAL yields the S-2 scientific disposition, "
+          "not a missing-state refusal",
+          nonzero(st) == {"CLASS_INELIGIBLE": 1}, json.dumps(nonzero(st)))
+    check("10d. exactly one terminal classification",
+          terminal_total(st) == 1 == st["effective_events_seen"])
+    later = [o for o in opened
+             if o.endswith("_D1_CAPTURE_MARKER.json")
+             or o.endswith("_OPERATIONS_PLAN.json")]
+    check("10e. no D1 marker or operations plan was opened after S-2 failed",
+          not later, str(later))
+
+    # -- D1 decomposition failure, written by the production writer ----------
+    r = Roots()
+    eid = build_event(r, "DELL", "FY27Q2", date(2026, 8, 3),
+                      d1=d1_fields(open_to_30m=None))
+    states = [x for x in r.es.read_all(eid) if x["record_type"] == "STATE"]
+    check("10f. the production writer created a stage-specific D1 PARTIAL",
+          states[-1]["state"] == "PARTIAL"
+          and partial_failure_stage(states, len(states) - 1) == FAILURE_STAGE_D1,
+          str([x["state"] for x in states]))
+    check("10g. the production marker writer created the D1 marker",
+          marker_path(r.markers, eid, STAGE_D1).exists())
+
+    st = r.status()
+    check("10h. a D1 PARTIAL with an invalid decomposition yields D1_GATE_FAILED",
+          nonzero(st) == {"D1_GATE_FAILED": 1}, json.dumps(nonzero(st)))
+    check("10i. no later disposition is added after S-4 fails",
+          "GST_PROVENANCE_FAILED" not in nonzero(st)
+          and "OUTCOME_MISSING" not in nonzero(st)
+          and terminal_total(st) == 1)
+
+    # -- a PARTIAL belonging to the wrong stage is never reassigned ----------
+    r = Roots()
+    eid = build_event(r, "DELL", "FY27Q2", date(2026, 8, 3),
+                      core=core_fields(wiki_zscore=None), with_d1=False)
+    states = A.read_state_log(EventStore(r.store), eid)
+    try:
+        A._stage_record(states, FAILURE_STAGE_D1, eid, A.D1_OK_STATES,
+                        EL.J_MISSING_D1_STATE)
+        ok, code = False, "accepted"
+    except EL.JoinRefusal as e:
+        ok, code = e.code == EL.J_MISSING_D1_STATE, e.code
+    check("10j. a PRE_EVENT PARTIAL is never accepted as D1 evidence", ok, code)
+
+    # -- a valid PARTIAL whose marker is absent stays STRUCTURAL -------------
+    r = Roots()
+    build_event(r, "DELL", "FY27Q2", date(2026, 8, 3),
+                core=core_fields(wiki_zscore=None), with_pre_marker=False,
+                with_d1=False)
+    st = r.status()
+    check("10k. a PRE_EVENT PARTIAL with no marker is a precise structural "
+          "refusal, never a scientific exclusion",
+          nonzero(st) == {EL.J_MISSING_PRE_EVENT_MARKER: 1}, json.dumps(nonzero(st)))
+
+    r = Roots()
+    build_event(r, "DELL", "FY27Q2", date(2026, 8, 3),
+                d1=d1_fields(open_to_30m=None), with_d1_marker=False)
+    st = r.status()
+    check("10l. a D1 PARTIAL with no marker is a precise structural refusal",
+          nonzero(st) == {EL.J_MISSING_D1_MARKER: 1}, json.dumps(nonzero(st)))
+
+    print("\n=== 11. six-category mixed cohort ===")
+
+    r = Roots()
+    ok_id = build_event(r, "AAPL", "FY27Q2", date(2026, 8, 3))          # eligible
+    register(r, "MSFT", "FY27Q2", date(2026, 8, 4), status="pending")   # S-1
+    build_event(r, "ADBE", "FY27Q2", date(2026, 8, 5),                  # S-2
+                core=core_fields(wiki_zscore=None), with_d1=False)
+    build_event(r, "AMZN", "FY27Q2", date(2026, 8, 6),                  # S-4
+                d1=d1_fields(open_to_30m=None))
+    build_event(r, "DELL", "FY27Q2", date(2026, 8, 7), with_d1_marker=False)  # structural
+    build_event(r, "TSLA", "FY27Q2", date(2026, 8, 10), session="INTRADAY")   # S-7
+    st, opened = status_with_open_audit(r)
+    expected = {"NOT_ENROLLED": 1, "CLASS_INELIGIBLE": 1, "D1_GATE_FAILED": 1,
+                EL.J_MISSING_D1_MARKER: 1, "MEASUREMENT_INCOMPATIBLE_INTRADAY": 1}
+    check("11a. effective_events_seen == 6", st["effective_events_seen"] == 6,
+          str(st["effective_events_seen"]))
+    check("11b. exactly one eligible event",
+          st["eligible_event_count"] == 1 and st["eligible_event_ids"] == [ok_id])
+    check("11c. the complete nonzero tally is one of each remaining category",
+          nonzero(st) == expected, json.dumps(nonzero(st)))
+    check("11d. reconciliation: 1 eligible + 5 exclusions == 6",
+          terminal_total(st) == 6, str(terminal_total(st)))
+    check("11e. every category is represented exactly once",
+          all(v == 1 for v in expected.values()) and len(expected) == 5)
+
     print(f"\n{CHECKS} checks run")
     if FAILURES:
         print(f"\n{len(FAILURES)} CHECK(S) FAILED:")

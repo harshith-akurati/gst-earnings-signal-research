@@ -225,9 +225,35 @@ def build_event(r: Roots, ticker: str, fy: str, earnings: date, *,
 
 
 def refusal_codes(r: Roots) -> list[str]:
-    """Refusals are now a dict event_id -> JoinRefusal, keyed so the driver can
-    thread each one into its single classification flow."""
-    return sorted({e.code for e in r.evidence()["refusals"].values()})
+    """Structural refusals from the progressive ladder, keyed by event_id."""
+    return sorted(set(r.evidence()["structural"].values()))
+
+
+def legs_for(r: Roots, eid: str):
+    """Re-derive one event's assembled evidence using the adapter's own
+    production helpers.
+
+    The ladder no longer bulk-assembles legs -- it opens evidence only as far
+    as it reaches -- so these checks call the same helpers the ladder calls
+    rather than reading a pre-built list.
+    """
+    store = EventStore(r.store)
+    states = A.read_state_log(store, eid)
+    pre = A._stage_record(states, A.FAILURE_STAGE_PRE_EVENT, eid,
+                          A.PRE_EVENT_OK_STATES, EL.J_MISSING_PRE_EVENT_STATE)
+    d1s = A._stage_record(states, A.FAILURE_STAGE_D1, eid,
+                          A.D1_OK_STATES, EL.J_MISSING_D1_STATE)
+    pre_marker = A.read_marker(r.markers, eid, STAGE_PRE_EVENT, pre,
+                               EL.J_MISSING_PRE_EVENT_MARKER)
+    d1_marker = A.read_marker(r.markers, eid, STAGE_D1, d1s,
+                              EL.J_MISSING_D1_MARKER)
+    effective = r.reg.effective_row(eid)
+    plan = A.read_operations_plan(r.plans, eid)
+    timing = A.validate_d1_response_window(effective, plan, d1s)
+    return (pre_marker,
+            A._gst_leg(effective, pre, marker_path(r.markers, eid, STAGE_PRE_EVENT)),
+            A._d1_leg(effective, d1s, d1_marker, timing,
+                      marker_path(r.markers, eid, STAGE_D1)))
 
 
 def main() -> int:
@@ -236,10 +262,11 @@ def main() -> int:
     r = Roots()
     eid = build_event(r, "DELL", "FY27Q2", date(2026, 8, 3))
     ev = r.evidence()
-    check("A1. the adapter derives all three legs from canonical artifacts",
-          len(ev["markers"]) == 1 and len(ev["gst_legs"]) == 1
-          and len(ev["d1_legs"]) == 1 and not ev["refusals"],
-          str(ev["refusals"]))
+    check("A1. the ladder reaches the end with no refusal and one outcome",
+          ev["eligible"] == [eid] and not ev["structural"]
+          and not ev["scientific"] and len(ev["outcomes"]) == 1,
+          str(ev["structural"]))
+    pre_marker, gst_leg, d1_leg = legs_for(r, eid)
 
     st = r.status()
     check("A2. a fully captured enrolled event is eligible end to end",
@@ -247,20 +274,21 @@ def main() -> int:
           json.dumps({k: v for k, v in st["exclusions_by_reason"].items() if v}))
     check("A3. the status document records the canonical adapter provenance",
           st["adapter"]["source"] == "canonical"
-          and st["adapter"]["d1_timing_validated_event_count"] == 1)
+          and st["adapter"]["events_eligible"] == 1
+          and st["adapter"]["events_refused_structurally"] == 0)
     check("A4. S-2 came from the persisted PRE_EVENT marker",
-          ev["markers"][0]["stage"] == STAGE_PRE_EVENT
-          and ev["markers"][0]["module_eligibility"]["core_pre_event_eligible"] is True)
+          pre_marker["stage"] == STAGE_PRE_EVENT
+          and pre_marker["module_eligibility"]["core_pre_event_eligible"] is True)
     check("A5. the GST leg carries the six strict-core fields from the state record",
-          all(k in ev["gst_legs"][0] for k in EL.STRICT_CORE_SIX_FIELDS))
+          all(k in gst_leg for k in EL.STRICT_CORE_SIX_FIELDS))
     check("A6. the D1 leg carries the four intervals and abs_overnight_gap",
-          all(k in ev["d1_legs"][0] for k in EL.D1_REQUIRED_FIELDS)
-          and "abs_overnight_gap" in ev["d1_legs"][0])
+          all(k in d1_leg for k in EL.D1_REQUIRED_FIELDS)
+          and "abs_overnight_gap" in d1_leg)
     check("A7. market-data provenance is derived from D1_COMPLETE + marker echo",
-          ev["d1_legs"][0]["market_data_provenance_valid"] is True)
+          d1_leg["market_data_provenance_valid"] is True)
     check("A8. provenance hashes come from canonical artifacts",
-          ev["gst_legs"][0]["provenance_sha256"] == HASH_A
-          and len(ev["d1_legs"][0]["provenance_sha256"]) == 64)
+          gst_leg["provenance_sha256"] == HASH_A
+          and len(d1_leg["provenance_sha256"]) == 64)
 
     # Amended registration.
     r = Roots()
@@ -345,11 +373,22 @@ def main() -> int:
           and {k: v for k, v in r.status()["exclusions_by_reason"].items() if v}
               == {EL.J_MARKER_STATE_DISAGREEMENT: 1}, str(refusal_codes(r)))
 
-    # PARTIAL D1 (incomplete decomposition) is not D1_COMPLETE.
+    # A stage-specific D1 PARTIAL is EVIDENCE, and reaches the registered
+    # scientific disposition. Treating it as a missing state was the defect.
     r = Roots()
     build_event(r, "DELL", "FY27Q2", date(2026, 8, 3),
                 d1=d1_fields(open_to_30m=None))
-    check("B7. a PARTIAL D1 stage is not accepted as D1 evidence",
+    st = r.status()
+    check("B7. a stage-specific D1 PARTIAL yields D1_GATE_FAILED, not a "
+          "missing-state refusal",
+          {k: v for k, v in st["exclusions_by_reason"].items() if v}
+          == {"D1_GATE_FAILED": 1},
+          json.dumps({k: v for k, v in st["exclusions_by_reason"].items() if v}))
+
+    # A genuinely absent D1 stage is still structural.
+    r = Roots()
+    build_event(r, "DELL", "FY27Q2", date(2026, 8, 3), with_d1=False)
+    check("B7b. a genuinely absent D1 stage is still a structural refusal",
           refusal_codes(r) == [EL.J_MISSING_D1_STATE], str(refusal_codes(r)))
 
     # No event-store log at all.

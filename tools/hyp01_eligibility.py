@@ -540,6 +540,49 @@ def join_event(effective: dict, marker: dict | None, gst_leg: dict | None,
 # The ladder
 # ---------------------------------------------------------------------------
 
+# --- The registered gates, one definition each ------------------------------
+# classify() (the in-memory primitive) and the canonical adapter's progressive
+# ladder both call THESE, so the two paths cannot drift. Each returns True when
+# the gate PASSES.
+
+def gate_s2(eligibility) -> bool:
+    """S-2, via the locked mechanizer, over the PERSISTED module eligibility."""
+    return is_eligible_for_hypothesis(HYPOTHESIS_CORE_ATTENTION_RESPONSE, eligibility)
+
+
+def gate_s3(gst_leg: dict) -> bool:
+    """S-3: the strict v0.2 core gate over the raw six panel fields."""
+    return evaluate_strict_core_v0_2(gst_leg).passed
+
+
+def gate_s4(d1_leg: dict) -> bool:
+    """S-4: a valid D1 decomposition."""
+    return is_valid_d1_decomposition(d1_leg)
+
+
+def gate_s5(gst_leg: dict) -> bool:
+    """S-5: gst_zscore non-null, successful GST status, usable provenance."""
+    if not _present(gst_leg, "gst_zscore"):
+        return False
+    if str(gst_leg.get("source_status_gst", "")) not in GST_OK_STATUSES:
+        return False
+    return provenance_ok(gst_leg)
+
+
+def gate_s6(d1_leg: dict) -> bool:
+    """S-6: abs_overnight_gap non-null with valid market-data provenance."""
+    if not _present(d1_leg, "abs_overnight_gap"):
+        return False
+    if d1_leg.get("market_data_provenance_valid") is not True:
+        return False
+    return provenance_ok(d1_leg)
+
+
+def gate_s7(release_market_session) -> bool:
+    """S-7: the registered release session is BMO or AMC."""
+    return str(release_market_session or "").upper() in VALID_SESSIONS
+
+
 def classify(effective: dict, joined: dict | None,
              refusal: JoinRefusal | None) -> tuple[bool, str | None]:
     """Apply the registered ladder to one event. Returns (eligible, reason).
@@ -575,44 +618,18 @@ def classify(effective: dict, joined: dict | None,
         return False, refusal.code
     assert joined is not None
 
-    # --- S-2: hypothesis-family gate, via the locked mechanizer -------------
-    # The lock names completeness.is_eligible_for_hypothesis as the mechanizer.
-    # Its input is the module-eligibility decision PERSISTED on the pre-event
-    # stage marker -- not any registry field, and not a reconstruction.
-    if not is_eligible_for_hypothesis(HYPOTHESIS_CORE_ATTENTION_RESPONSE,
-                                      joined["module_eligibility"]):
+    # --- S-2 .. S-7, in the registered order, via the shared gate predicates -
+    if not gate_s2(joined["module_eligibility"]):
         return False, R_CLASS_INELIGIBLE
-
-    # --- S-3: strict v0.2 core gate over the six panel fields ---------------
-    # Independent of S-2. S-2 asks whether the PERSISTED decision admits this
-    # hypothesis family; S-3 re-verifies the underlying six-field evidence from
-    # the raw leg. A persisted decision never substitutes for the raw check.
-    if not evaluate_strict_core_v0_2(joined["gst"]).passed:
+    if not gate_s3(joined["gst"]):
         return False, R_CORE_GATE_FAILED
-
-    # --- S-4: valid D1 decomposition ----------------------------------------
-    if not is_valid_d1_decomposition(joined["d1"]):
+    if not gate_s4(joined["d1"]):
         return False, R_D1_GATE_FAILED
-
-    # --- S-5: gst_zscore non-null with a successful GST source status -------
-    if not _present(joined["gst"], "gst_zscore"):
+    if not gate_s5(joined["gst"]):
         return False, R_GST_PROVENANCE_FAILED
-    if str(joined["gst"].get("source_status_gst", "")) not in GST_OK_STATUSES:
-        return False, R_GST_PROVENANCE_FAILED
-    if not provenance_ok(joined["gst"]):
-        return False, R_GST_PROVENANCE_FAILED
-
-    # --- S-6: abs_overnight_gap non-null with valid market-data provenance ---
-    if not _present(joined["d1"], "abs_overnight_gap"):
+    if not gate_s6(joined["d1"]):
         return False, R_OUTCOME_MISSING
-    if joined["d1"].get("market_data_provenance_valid") is not True:
-        return False, R_OUTCOME_MISSING
-    if not provenance_ok(joined["d1"]):
-        return False, R_OUTCOME_MISSING
-
-    # --- S-7: registered release session in {BMO, AMC} ----------------------
-    session = str(joined.get("release_market_session") or "").upper()
-    if session not in VALID_SESSIONS:
+    if not gate_s7(joined.get("release_market_session")):
         return False, R_MEASUREMENT_INCOMPATIBLE_INTRADAY
 
     # S-8 is applied by the driver over the ordered candidate set.
@@ -638,67 +655,29 @@ def _sort_key(rec: dict) -> tuple:
     return (str(rec.get("response_session_date") or ""), str(rec.get("event_id") or ""))
 
 
-def run_driver(snapshot: RegistrySnapshot, markers: list[dict],
-               gst_legs: list[dict], d1_legs: list[dict],
-               refusals: dict | None = None) -> dict:
-    """INTERNAL, TESTABLE PRIMITIVE. Deterministic eligibility count over ONE
-    registry snapshot.
+def tally_outcomes(snapshot: RegistrySnapshot, outcomes: dict,
+                   extra_notes: tuple = ()) -> dict:
+    """Build the redacted status document from one terminal outcome per event.
 
-    This is the SINGLE classification flow. Every effective event passes
-    through it exactly once and leaves with exactly one terminal category:
-    eligible (rank 1-60), EXTENSION_COHORT, one registered scientific
-    exclusion, or one structural refusal.
+    `outcomes` maps event_id -> (eligible, reason_or_None, sort_record_or_None).
+    Exactly one entry per effective event; the reconciliation invariant is
+    enforced before this returns.
 
-    `refusals` maps event_id -> JoinRefusal for events whose canonical evidence
-    the adapter could not assemble. Those refusals are threaded INTO this flow
-    rather than added to the tally afterwards -- adding them afterwards is what
-    let one event contribute two counts, because the driver also saw the
-    missing legs and recorded a second, generic missing-leg refusal.
-
-    In production the legs come from tools/hyp01_canonical_adapter.py. Nothing
-    should hand this fabricated evidence outside a test.
+    This is the SINGLE place a status document is built, so the in-memory
+    primitive and the canonical progressive ladder cannot produce differently
+    shaped or differently reconciled results.
     """
-    refusals = dict(refusals or {})
     tally = {r: 0 for r in REASONS}
     tally.update({j: 0 for j in JOIN_REFUSALS})
 
-    effective_rows = snapshot.rows
-
-    seen: set[str] = set()
-    for row in effective_rows:
-        eid = row["event_id"]
-        if eid in seen:
-            raise JoinRefusal(J_DUPLICATE_EVENT, eid, "effective registry lists it twice")
-        seen.add(eid)
-
-    marker_ix = {k: project_marker(v)
-                 for k, v in _index_unique(markers, "pre-event marker").items()}
-    gst_ix = _index_unique(gst_legs, "gst")
-    d1_ix = _index_unique(d1_legs, "d1")
-
     candidates: list[dict] = []
-    for row in effective_rows:
+    for row in snapshot.rows:
         eid = row["event_id"]
-        joined = None
-        refusal = refusals.get(eid)
-
-        # S-1 PREEMPTS EVERYTHING. A non-enrolled event terminates here: no
-        # join is attempted, no evidence is consulted, and any refusal the
-        # caller happened to carry is discarded rather than double-recorded.
-        if not is_enrolled(row):
-            tally[R_NOT_ENROLLED] += 1
-            continue
-
-        if refusal is None:
-            try:
-                joined = join_event(row, marker_ix.get(eid), gst_ix.get(eid),
-                                    d1_ix.get(eid))
-            except JoinRefusal as e:
-                refusal = e
-
-        ok, reason = classify(row, joined, refusal)
+        if eid not in outcomes:
+            raise ReconciliationError(f"no terminal outcome recorded for {eid!r}")
+        ok, reason, rec = outcomes[eid]
         if ok:
-            candidates.append(joined)
+            candidates.append(rec)
         else:
             tally[reason] = tally.get(reason, 0) + 1
 
@@ -720,7 +699,7 @@ def run_driver(snapshot: RegistrySnapshot, markers: list[dict],
         "extension_cohort_event_ids": [c["event_id"] for c in extension],
         "exclusions_by_reason": {k: v for k, v in sorted(tally.items())
                                  if v or k in REASONS},
-        "effective_events_seen": len(effective_rows),
+        "effective_events_seen": len(snapshot.rows),
         "registry_snapshot_sha256": snapshot.sha256,
         "freeze_required": at_gate,
         "counting_state": "REFUSED_AT_GATE" if at_gate else "COUNTING",
@@ -748,10 +727,71 @@ def run_driver(snapshot: RegistrySnapshot, markers: list[dict],
             "this document is returned.",
             "Events beyond rank 60 in the section-2 order are EXTENSION_COHORT and "
             "never enlarge the frozen set.",
+            *extra_notes,
         ],
     }
     reconcile(status)
     return status
+
+
+def run_driver(snapshot: RegistrySnapshot, markers: list[dict],
+               gst_legs: list[dict], d1_legs: list[dict],
+               refusals: dict | None = None) -> dict:
+    """INTERNAL, TESTABLE PRIMITIVE. Deterministic eligibility count over ONE
+    registry snapshot.
+
+    This is the SINGLE classification flow. Every effective event passes
+    through it exactly once and leaves with exactly one terminal category:
+    eligible (rank 1-60), EXTENSION_COHORT, one registered scientific
+    exclusion, or one structural refusal.
+
+    `refusals` maps event_id -> JoinRefusal for events whose canonical evidence
+    the adapter could not assemble. Those refusals are threaded INTO this flow
+    rather than added to the tally afterwards -- adding them afterwards is what
+    let one event contribute two counts, because the driver also saw the
+    missing legs and recorded a second, generic missing-leg refusal.
+
+    In production the legs come from tools/hyp01_canonical_adapter.py. Nothing
+    should hand this fabricated evidence outside a test.
+    """
+    refusals = dict(refusals or {})
+
+    seen: set[str] = set()
+    for row in snapshot.rows:
+        eid = row["event_id"]
+        if eid in seen:
+            raise JoinRefusal(J_DUPLICATE_EVENT, eid, "effective registry lists it twice")
+        seen.add(eid)
+
+    marker_ix = {k: project_marker(v)
+                 for k, v in _index_unique(markers, "pre-event marker").items()}
+    gst_ix = _index_unique(gst_legs, "gst")
+    d1_ix = _index_unique(d1_legs, "d1")
+
+    outcomes: dict[str, tuple] = {}
+    for row in snapshot.rows:
+        eid = row["event_id"]
+
+        # S-1 PREEMPTS EVERYTHING. A non-enrolled event terminates here: no
+        # join is attempted, no evidence is consulted, and any refusal the
+        # caller happened to carry is discarded rather than double-recorded.
+        if not is_enrolled(row):
+            outcomes[eid] = (False, R_NOT_ENROLLED, None)
+            continue
+
+        joined = None
+        refusal = refusals.get(eid)
+        if refusal is None:
+            try:
+                joined = join_event(row, marker_ix.get(eid), gst_ix.get(eid),
+                                    d1_ix.get(eid))
+            except JoinRefusal as e:
+                refusal = e
+
+        ok, reason = classify(row, joined, refusal)
+        outcomes[eid] = (True, None, joined) if ok else (False, reason, None)
+
+    return tally_outcomes(snapshot, outcomes)
 
 
 def reconcile(status: dict) -> None:
