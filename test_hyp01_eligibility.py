@@ -243,8 +243,10 @@ def d1(i, **over):
 
 # --- drivers ----------------------------------------------------------------
 
-def run(rows, markers, gsts, d1s):
-    return E.run_driver(build_registry(rows), markers, gsts, d1s)
+def run(rows, markers, gsts, d1s, refusals=None):
+    """Drive the ladder over a snapshot of a synthetic registry."""
+    snapshot = E.load_registry_snapshot(build_registry(rows))
+    return E.run_driver(snapshot, markers, gsts, d1s, refusals=refusals)
 
 
 def one(row, mk, gst_leg, d1_leg):

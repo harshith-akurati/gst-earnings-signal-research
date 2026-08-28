@@ -118,8 +118,11 @@ class Roots:
     def status(self):
         return A.run_canonical(self.registry, self.store, self.markers, self.plans)
 
-    def evidence(self):
-        return A.load_canonical_evidence(self.registry, self.store,
+    def snapshot(self):
+        return EL.load_registry_snapshot(self.registry)
+
+    def evidence(self, snapshot=None):
+        return A.load_canonical_evidence(snapshot or self.snapshot(), self.store,
                                          self.markers, self.plans)
 
 
@@ -222,7 +225,9 @@ def build_event(r: Roots, ticker: str, fy: str, earnings: date, *,
 
 
 def refusal_codes(r: Roots) -> list[str]:
-    return sorted({c for _e, c, _d in r.evidence()["refusals"]})
+    """Refusals are now a dict event_id -> JoinRefusal, keyed so the driver can
+    thread each one into its single classification flow."""
+    return sorted({e.code for e in r.evidence()["refusals"].values()})
 
 
 def main() -> int:
@@ -295,10 +300,14 @@ def main() -> int:
         got = refusal_codes(r)
         check(f"{label} -> {want}", got == [want], str(got))
         st = r.status()
-        check(f"{label} counts nothing and stays structural",
-              st["eligible_event_count"] == 0
-              and st["exclusions_by_reason"].get(want) == 1,
-              json.dumps({k: v for k, v in st["exclusions_by_reason"].items() if v}))
+        nz = {k: v for k, v in st["exclusions_by_reason"].items() if v}
+        # The COMPLETE nonzero tally, not merely "the expected code appears":
+        # a second generic refusal alongside it is exactly the defect this
+        # guards against.
+        check(f"{label} yields exactly one terminal classification",
+              st["eligible_event_count"] == 0 and nz == {want: 1}
+              and sum(st["exclusions_by_reason"].values()) == st["effective_events_seen"],
+              json.dumps(nz))
 
     # Marker / state disagreement: tamper with the marker AFTER it is written.
     r = Roots()
@@ -308,7 +317,9 @@ def main() -> int:
     tampered["response_magnitude"]["abs_overnight_gap"] = 1.23456789
     mp.write_text(json.dumps(tampered), encoding="utf-8")
     check("B6. a D1 marker whose outcome echo disagrees with the record refuses",
-          refusal_codes(r) == [EL.J_MARKER_STATE_DISAGREEMENT], str(refusal_codes(r)))
+          refusal_codes(r) == [EL.J_MARKER_STATE_DISAGREEMENT]
+          and {k: v for k, v in r.status()["exclusions_by_reason"].items() if v}
+              == {EL.J_MARKER_STATE_DISAGREEMENT: 1}, str(refusal_codes(r)))
 
     # The same, on the PRE_EVENT marker's persisted S-2 decision.
     r = Roots()
@@ -318,7 +329,9 @@ def main() -> int:
     tampered["module_eligibility"]["core_pre_event_eligible"] = False
     mp.write_text(json.dumps(tampered), encoding="utf-8")
     check("B6b. a PRE_EVENT marker whose eligibility block was edited refuses",
-          refusal_codes(r) == [EL.J_MARKER_STATE_DISAGREEMENT], str(refusal_codes(r)))
+          refusal_codes(r) == [EL.J_MARKER_STATE_DISAGREEMENT]
+          and {k: v for k, v in r.status()["exclusions_by_reason"].items() if v}
+              == {EL.J_MARKER_STATE_DISAGREEMENT: 1}, str(refusal_codes(r)))
 
     # And on the provenance echo.
     r = Roots()
@@ -328,7 +341,9 @@ def main() -> int:
     tampered["provenance"]["source_csv_sha256"] = "c" * 64
     mp.write_text(json.dumps(tampered), encoding="utf-8")
     check("B6c. a PRE_EVENT marker whose provenance echo was edited refuses",
-          refusal_codes(r) == [EL.J_MARKER_STATE_DISAGREEMENT], str(refusal_codes(r)))
+          refusal_codes(r) == [EL.J_MARKER_STATE_DISAGREEMENT]
+          and {k: v for k, v in r.status()["exclusions_by_reason"].items() if v}
+              == {EL.J_MARKER_STATE_DISAGREEMENT: 1}, str(refusal_codes(r)))
 
     # PARTIAL D1 (incomplete decomposition) is not D1_COMPLETE.
     r = Roots()

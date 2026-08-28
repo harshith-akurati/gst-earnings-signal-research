@@ -125,7 +125,11 @@ def read_state_log(store: EventStore, event_id: str) -> list[dict]:
     the persisted chronology, so a log that could never have been written by
     the pipeline refuses instead of being read as evidence.
     """
-    records = store.read_all(event_id)
+    try:
+        records = store.read_all(event_id)
+    except json.JSONDecodeError as exc:
+        raise JoinRefusal(EL.J_MALFORMED_CANONICAL_JSON, event_id,
+                          f"event-store log is not valid JSONL: {exc}") from exc
     if not records:
         raise JoinRefusal(EL.J_MISSING_EVENT_STORE_LOG, event_id,
                           "no canonical event-store log")
@@ -197,7 +201,11 @@ def read_marker(marker_root: Path, event_id: str, stage: str,
     path = marker_path(marker_root, event_id, stage)
     if not path.exists():
         raise JoinRefusal(missing_code, event_id, f"no {stage} marker at {path.name}")
-    marker = json.loads(path.read_text(encoding="utf-8"))
+    try:
+        marker = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise JoinRefusal(EL.J_MALFORMED_CANONICAL_JSON, event_id,
+                          f"{stage} marker is not valid JSON: {exc}") from exc
 
     diffs = []
     if marker.get("event_id") != event_id:
@@ -237,7 +245,14 @@ def read_operations_plan(plan_root: Path, event_id: str) -> dict:
     if not path.exists():
         raise JoinRefusal(EL.J_MISSING_OPERATIONS_PLAN, event_id,
                           f"no operations plan at {path.name}")
-    plan = json.loads(path.read_text(encoding="utf-8"))
+    try:
+        plan = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise JoinRefusal(EL.J_MALFORMED_CANONICAL_JSON, event_id,
+                          f"operations plan is not valid JSON: {exc}") from exc
+    if not isinstance(plan, dict):
+        raise JoinRefusal(EL.J_MALFORMED_CANONICAL_JSON, event_id,
+                          "operations plan is not a JSON object")
     integrity = plan.get("integrity") or {}
     stored = integrity.get("plan_content_sha256")
     if not stored:
@@ -390,31 +405,45 @@ def _d1_leg(effective: dict, d1_state: dict, d1_marker: dict, timing: dict,
 # Public entry point
 # ---------------------------------------------------------------------------
 
-def load_canonical_evidence(registry_root: Path, event_store_root: Path,
+def load_canonical_evidence(snapshot, event_store_root: Path,
                             marker_root: Path, plan_root: Path) -> dict:
-    """Build the evidence the eligibility driver consumes, from canonical roots.
+    """Assemble the evidence the eligibility driver consumes, from canonical
+    roots, for ONE registry snapshot.
+
+    S-1 PREEMPTS ALL EVIDENCE WORK. A registration that is not verified is
+    skipped entirely here: its event-store log, stage markers, operations plan,
+    GST evidence and D1 evidence are never opened, and it is given NO refusal.
+    The driver classifies it as NOT_ENROLLED and nothing else. Inspecting a
+    non-enrolled event's artifacts would both violate the gate order and give
+    it a second terminal category.
 
     Returns {"markers": [...], "gst_legs": [...], "d1_legs": [...],
-             "refusals": [(event_id, code, detail)], "timing": {...}}.
+             "refusals": {event_id: JoinRefusal}, "timing": {...},
+             "skipped_not_enrolled": [event_id]}.
 
-    A per-event refusal is CARRIED, not raised: the remaining cohort still
-    counts, and the driver records the structural code for that one event.
+    A per-event refusal is CARRIED, not raised, and is keyed by event_id so the
+    driver can thread it into its single classification flow. It is never added
+    to a tally here.
     """
-    registry_root = Path(registry_root)
     store = EventStore(Path(event_store_root))
     marker_root = Path(marker_root)
     plan_root = Path(plan_root)
 
-    effective_rows = EL.load_effective_registrations(registry_root)
-
     markers: list[dict] = []
     gst_legs: list[dict] = []
     d1_legs: list[dict] = []
-    refusals: list[tuple[str, str, str]] = []
+    refusals: dict[str, JoinRefusal] = {}
     timings: dict[str, dict] = {}
+    skipped: list[str] = []
 
-    for effective in effective_rows:
+    for effective in snapshot.rows:
         eid = effective["event_id"]
+
+        # --- S-1 gate, before any artifact is touched ----------------------
+        if not EL.is_enrolled(effective):
+            skipped.append(eid)
+            continue
+
         try:
             states = read_state_log(store, eid)
 
@@ -438,26 +467,32 @@ def load_canonical_evidence(registry_root: Path, event_store_root: Path,
                                    marker_path(marker_root, eid, STAGE_D1)))
             timings[eid] = timing
         except JoinRefusal as e:
-            refusals.append((eid, e.code, e.detail))
+            refusals[eid] = e
 
     return {"markers": markers, "gst_legs": gst_legs, "d1_legs": d1_legs,
-            "refusals": refusals, "timing": timings}
+            "refusals": refusals, "timing": timings,
+            "skipped_not_enrolled": skipped}
 
 
 def run_canonical(registry_root: Path, event_store_root: Path, marker_root: Path,
                   plan_root: Path) -> dict:
-    """Canonical roots in, redacted status document out."""
-    evidence = load_canonical_evidence(registry_root, event_store_root,
-                                       marker_root, plan_root)
-    status = EL.run_driver(registry_root, evidence["markers"],
-                           evidence["gst_legs"], evidence["d1_legs"])
+    """Canonical roots in, redacted status document out.
 
-    # Fold the adapter's per-event refusals into the same tally. They are
-    # structural codes, never scientific dispositions.
-    tally = dict(status["exclusions_by_reason"])
-    for _eid, code, _detail in evidence["refusals"]:
-        tally[code] = tally.get(code, 0) + 1
-    status["exclusions_by_reason"] = dict(sorted(tally.items()))
+    ONE registry snapshot is taken here and threaded through evidence assembly,
+    classification and ordering, so a single invocation can never mix two
+    registry states.
+    """
+    snapshot = EL.load_registry_snapshot(Path(registry_root))
+    evidence = load_canonical_evidence(snapshot, event_store_root, marker_root,
+                                       plan_root)
+
+    # The adapter's per-event refusals go INTO the driver's single
+    # classification flow. They are deliberately NOT added to the tally
+    # afterwards: doing that was the double-counting defect, because the driver
+    # also saw the absent legs and recorded a second generic refusal.
+    status = EL.run_driver(snapshot, evidence["markers"], evidence["gst_legs"],
+                           evidence["d1_legs"], refusals=evidence["refusals"])
+
     status["adapter"] = {
         "source": "canonical",
         "registry_root": Path(registry_root).as_posix(),
@@ -466,12 +501,16 @@ def run_canonical(registry_root: Path, event_store_root: Path, marker_root: Path
         "operations_plan_root": Path(plan_root).as_posix(),
         "events_with_complete_evidence": len(evidence["d1_legs"]),
         "events_refused_structurally": len(evidence["refusals"]),
+        "events_stopped_at_s1_not_enrolled": len(evidence["skipped_not_enrolled"]),
         "d1_timing_validated_event_count": len(evidence["timing"]),
     }
     status["notes"] = list(status["notes"]) + [
         "Every leg was derived from canonical artifacts by "
         "tools/hyp01_canonical_adapter.py. No hand-prepared evidence file is "
         "accepted by this command.",
+        "S-1 preempts evidence assembly: a registration that is not verified has "
+        "no event-store log, marker, plan or capture leg opened, and receives "
+        "NOT_ENROLLED and nothing else.",
         "D1 evidence is bound to the REGISTERED response session and to the "
         "operations plan's earliest permitted provider retrieval instant.",
         "SPECIFICATION GAP: no committed artifact states a LATEST permissible D1 "
@@ -501,6 +540,11 @@ def main(argv=None) -> int:
     except JoinRefusal as e:
         print(f"REFUSED {e.code}: {e.event_id} {e.detail}".rstrip())
         return 2
+    except EL.ReconciliationError as e:
+        # A status document that does not account for every event exactly once
+        # would misrepresent the cohort. Nothing is written.
+        print(f"RECONCILIATION FAILED: {e}", file=sys.stderr)
+        return 3
     body = json.dumps(status, indent=2)
     if a.out:
         out = Path(a.out)

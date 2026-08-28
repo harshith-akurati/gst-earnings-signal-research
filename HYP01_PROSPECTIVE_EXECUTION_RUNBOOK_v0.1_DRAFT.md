@@ -43,7 +43,7 @@ python tools/hyp01_canonical_adapter.py \
 ```
 
 Exit codes: `0` a status document was produced; `2` the input set is malformed and the adapter
-refused. Re-running over unchanged roots rewrites nothing and prints
+refused; `3` the reconciliation invariant failed and nothing was written. Re-running over unchanged roots rewrites nothing and prints
 `unchanged; nothing rewritten (idempotent)`.
 
 `tools/hyp01_eligibility.py` is **not** an entry point. It previously accepted `--gst-legs`,
@@ -193,6 +193,36 @@ methodology-version matches, neither of which governs D1 capture recency.
 **An upper bound is therefore not enforced**, because enforcing one would mean inventing a tolerance.
 This is a specification gap for a human to close, recorded rather than filled.
 
+## 3c. One event, one classification
+
+Every effective event leaves the run with **exactly one** terminal category: eligible (rank 1-60),
+`EXTENSION_COHORT`, one registered scientific exclusion, or one structural refusal.
+
+- **S-1 preempts everything.** A registration that is not verified is classified `NOT_ENROLLED` and
+  nothing else. Its event-store log, stage markers, operations plan, GST evidence and D1 evidence are
+  never opened, and it is given no structural refusal.
+- **Precise refusals survive.** A canonical refusal (say `MISSING_PRE_EVENT_STATE`) is threaded into
+  the driver's single classification flow, not added to the tally afterwards. It is never replaced by,
+  or supplemented with, a generic `MISSING_GST_LEG`.
+- **One registry snapshot per invocation.** `registry.jsonl` is read, validated and folded once; the
+  same snapshot drives evidence assembly, classification and ordering. The file is hashed before and
+  after the fold, so a mutation mid-run refuses instead of blending two states. Only the snapshot
+  SHA-256 reaches the status document (`registry_snapshot_sha256`) -- never registry contents.
+- **Reconciliation invariant**, enforced before the document is returned or written:
+
+  ```
+  eligible + extension + scientific exclusions + structural refusals == effective_events_seen
+  ```
+
+  A violation raises `ReconciliationError`; the CLI exits **3** and writes nothing.
+
+**Reachability note.** `CORE_GATE_FAILED`, `CLASS_INELIGIBLE`, `D1_GATE_FAILED` and `OUTCOME_MISSING`
+cannot be produced through the canonical writers: a failing strict-core or D1 gate drives the event to
+`PARTIAL`, which `validate_transition()` treats as terminal, so no `D1_COMPLETE` record is ever
+written and the adapter refuses structurally instead. The canonically reachable scientific exclusions
+are S-7 (`MEASUREMENT_INCOMPATIBLE_INTRADAY`) and S-5 (`GST_PROVENANCE_FAILED`). All of them remain
+reachable at the primitive level and are exercised in `test_hyp01_eligibility.py`.
+
 ## 4. Refusals
 
 A refusal is not a scientific disposition. It means the record set is malformed, no disposition can
@@ -310,6 +340,7 @@ rule `D16 = NO_PROJECT_DERIVED_POWER_CLAIM` prohibits.
 ```
 python tools/hyp01_canonical_adapter.py --help   # the production command
 python test_hyp01_canonical_adapter.py  # 47 checks — canonical end-to-end, D1 timing
+python test_hyp01_first_failure_classification.py  # 40 checks — one event, one classification
 python test_hyp01_eligibility.py        # 91 checks — registry, S-2, join, ladder, gate order, provenance
 python test_hyp01_progress_report.py    # 25 checks — redaction, effective registry, deterministic counting
 ```

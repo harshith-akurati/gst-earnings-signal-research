@@ -107,6 +107,8 @@ J_ORPHAN_AMENDMENT = "JOIN_REFUSED_ORPHAN_AMENDMENT"
 J_ILLEGAL_IDENTITY_CHANGE = "JOIN_REFUSED_ILLEGAL_IDENTITY_CHANGE"
 J_UNKNOWN_ROW_TYPE = "JOIN_REFUSED_UNKNOWN_ROW_TYPE"
 J_MISSING_REGISTRY_FIELD = "JOIN_REFUSED_MISSING_REGISTRY_FIELD"
+J_REGISTRY_MUTATED_DURING_RUN = "JOIN_REFUSED_REGISTRY_MUTATED_DURING_RUN"
+J_MALFORMED_CANONICAL_JSON = "JOIN_REFUSED_MALFORMED_CANONICAL_JSON"
 
 # Module-eligibility (S-2 evidence) refusals.
 #
@@ -154,6 +156,7 @@ JOIN_REFUSALS = (
     J_KEY_MISMATCH, J_UNEXPECTED_FIELD, J_NO_CAPTURE_TIME,
     J_NO_BASE_REGISTRATION, J_DUPLICATE_BASE_REGISTRATION, J_ORPHAN_AMENDMENT,
     J_ILLEGAL_IDENTITY_CHANGE, J_UNKNOWN_ROW_TYPE, J_MISSING_REGISTRY_FIELD,
+    J_REGISTRY_MUTATED_DURING_RUN, J_MALFORMED_CANONICAL_JSON,
     J_MISSING_PRE_EVENT_MARKER, J_MISSING_MODULE_ELIGIBILITY,
     J_UNREADABLE_MODULE_ELIGIBILITY, J_MARKER_IDENTITY_MISMATCH,
 )
@@ -224,6 +227,10 @@ def _sha256_text(t: str) -> str:
     return hashlib.sha256(t.encode("utf-8")).hexdigest()
 
 
+def _sha256_bytes(b: bytes) -> str:
+    return hashlib.sha256(b).hexdigest()
+
+
 def _present(fields: dict, key: str) -> bool:
     return fields.get(key) is not None
 
@@ -247,6 +254,65 @@ def provenance_ok(leg: dict) -> bool:
 # ---------------------------------------------------------------------------
 # Canonical registry handling
 # ---------------------------------------------------------------------------
+
+def is_enrolled(effective: dict) -> bool:
+    """S-1, as a single shared predicate.
+
+    Defined once so the adapter can STOP at S-1 without reimplementing it, and
+    classify() can apply it without the two drifting apart.
+    """
+    return str(effective.get("verification_status", "")).lower() == "verified"
+
+
+class ReconciliationError(Exception):
+    """The terminal-classification tally does not account for every effective
+    event exactly once. Raised instead of returning a misleading status."""
+
+
+class RegistrySnapshot:
+    """One immutable read of the canonical registry, used for the WHOLE run.
+
+    The adapter and the driver previously each loaded the registry, so a run
+    could mix two registry states. One snapshot is taken per invocation and
+    threaded through evidence assembly, classification and ordering.
+
+    `sha256` is the digest of registry.jsonl's bytes at read time. It is the
+    only registry-derived value that reaches the status document -- an
+    immutable snapshot identifier, never registry contents.
+    """
+
+    __slots__ = ("rows", "sha256", "root")
+
+    def __init__(self, rows: list[dict], sha256: str, root: Path):
+        self.rows = rows
+        self.sha256 = sha256
+        self.root = root
+
+    def __len__(self) -> int:
+        return len(self.rows)
+
+
+def load_registry_snapshot(registry_root: Path) -> RegistrySnapshot:
+    """Read, validate and fold the registry exactly once.
+
+    The file is hashed before and after the fold. HumanVerifiedEventRegistry
+    re-opens registry.jsonl per effective_row() call, so a mutation mid-fold
+    would silently blend two states; a changed digest REFUSES instead.
+    """
+    root = Path(registry_root)
+    path = root / "registry.jsonl"
+    before = _sha256_bytes(path.read_bytes()) if path.exists() else _sha256_text("")
+    try:
+        rows = load_effective_registrations(root)
+    except json.JSONDecodeError as exc:
+        raise JoinRefusal(J_MALFORMED_CANONICAL_JSON, "<registry>",
+                          f"registry.jsonl is not valid JSONL: {exc}") from exc
+    after = _sha256_bytes(path.read_bytes()) if path.exists() else _sha256_text("")
+    if before != after:
+        raise JoinRefusal(J_REGISTRY_MUTATED_DURING_RUN, "<registry>",
+                          "registry.jsonl changed while it was being read")
+    return RegistrySnapshot(rows=rows, sha256=before, root=root)
+
 
 def validate_registry_rows(rows: list[dict]) -> None:
     """Structural validation of the raw append-only registry log.
@@ -496,7 +562,7 @@ def classify(effective: dict, joined: dict | None,
     # Reads the EFFECTIVE registration -- the base REGISTRATION row with every
     # amendment folded in -- so a corrected status is honoured. This is the
     # only gate evaluable without the capture artifacts.
-    if str(effective.get("verification_status", "")).lower() != "verified":
+    if not is_enrolled(effective):
         return False, R_NOT_ENROLLED
 
     # --- structural availability --------------------------------------------
@@ -572,24 +638,31 @@ def _sort_key(rec: dict) -> tuple:
     return (str(rec.get("response_session_date") or ""), str(rec.get("event_id") or ""))
 
 
-def run_driver(registry_root: Path, markers: list[dict], gst_legs: list[dict],
-               d1_legs: list[dict]) -> dict:
-    """INTERNAL, TESTABLE PRIMITIVE. Deterministic eligibility count over the
-    canonical effective registry.
+def run_driver(snapshot: RegistrySnapshot, markers: list[dict],
+               gst_legs: list[dict], d1_legs: list[dict],
+               refusals: dict | None = None) -> dict:
+    """INTERNAL, TESTABLE PRIMITIVE. Deterministic eligibility count over ONE
+    registry snapshot.
 
-    This takes already-extracted legs so synthetic unit tests can drive the
-    ladder directly. It is NOT a production input mechanism: in production the
-    legs come from tools/hyp01_canonical_adapter.py, which derives them from the
-    canonical event store, immutable stage markers and operations plan. Nothing
-    should hand it fabricated evidence outside a test.
+    This is the SINGLE classification flow. Every effective event passes
+    through it exactly once and leaves with exactly one terminal category:
+    eligible (rank 1-60), EXTENSION_COHORT, one registered scientific
+    exclusion, or one structural refusal.
 
-    Reads inputs and returns a status document; writes nothing. The caller
-    persists it.
+    `refusals` maps event_id -> JoinRefusal for events whose canonical evidence
+    the adapter could not assemble. Those refusals are threaded INTO this flow
+    rather than added to the tally afterwards -- adding them afterwards is what
+    let one event contribute two counts, because the driver also saw the
+    missing legs and recorded a second, generic missing-leg refusal.
+
+    In production the legs come from tools/hyp01_canonical_adapter.py. Nothing
+    should hand this fabricated evidence outside a test.
     """
+    refusals = dict(refusals or {})
     tally = {r: 0 for r in REASONS}
     tally.update({j: 0 for j in JOIN_REFUSALS})
 
-    effective_rows = load_effective_registrations(Path(registry_root))
+    effective_rows = snapshot.rows
 
     seen: set[str] = set()
     for row in effective_rows:
@@ -607,11 +680,22 @@ def run_driver(registry_root: Path, markers: list[dict], gst_legs: list[dict],
     for row in effective_rows:
         eid = row["event_id"]
         joined = None
-        refusal = None
-        try:
-            joined = join_event(row, marker_ix.get(eid), gst_ix.get(eid), d1_ix.get(eid))
-        except JoinRefusal as e:
-            refusal = e
+        refusal = refusals.get(eid)
+
+        # S-1 PREEMPTS EVERYTHING. A non-enrolled event terminates here: no
+        # join is attempted, no evidence is consulted, and any refusal the
+        # caller happened to carry is discarded rather than double-recorded.
+        if not is_enrolled(row):
+            tally[R_NOT_ENROLLED] += 1
+            continue
+
+        if refusal is None:
+            try:
+                joined = join_event(row, marker_ix.get(eid), gst_ix.get(eid),
+                                    d1_ix.get(eid))
+            except JoinRefusal as e:
+                refusal = e
+
         ok, reason = classify(row, joined, refusal)
         if ok:
             candidates.append(joined)
@@ -627,7 +711,7 @@ def run_driver(registry_root: Path, markers: list[dict], gst_legs: list[dict],
     count = len(eligible)
     at_gate = count >= BINDING_TARGET
 
-    return {
+    status = {
         "schema": "GST_HYP01_ELIGIBILITY_STATUS_v1",
         "binding_target": BINDING_TARGET,
         "eligible_event_count": count,
@@ -637,6 +721,7 @@ def run_driver(registry_root: Path, markers: list[dict], gst_legs: list[dict],
         "exclusions_by_reason": {k: v for k, v in sorted(tally.items())
                                  if v or k in REASONS},
         "effective_events_seen": len(effective_rows),
+        "registry_snapshot_sha256": snapshot.sha256,
         "freeze_required": at_gate,
         "counting_state": "REFUSED_AT_GATE" if at_gate else "COUNTING",
         "freeze_note": (
@@ -658,10 +743,33 @@ def run_driver(registry_root: Path, markers: list[dict], gst_legs: list[dict],
             "as separate events.",
             "S-2 is decided by completeness.is_eligible_for_hypothesis() over the "
             "module eligibility persisted on the pre-event stage marker.",
+            "Every effective event contributes exactly one terminal "
+            "classification; the reconciliation invariant is enforced before "
+            "this document is returned.",
             "Events beyond rank 60 in the section-2 order are EXTENSION_COHORT and "
             "never enlarge the frozen set.",
         ],
     }
+    reconcile(status)
+    return status
+
+
+def reconcile(status: dict) -> None:
+    """eligible + extension + scientific exclusions + structural refusals
+    == effective_events_seen.
+
+    EXTENSION_COHORT is already carried inside exclusions_by_reason, so the sum
+    below counts it exactly once. A violation means some event was classified
+    more than once, or not at all; either way the document would misrepresent
+    the cohort, so it is never returned or written.
+    """
+    total = sum(status["exclusions_by_reason"].values()) + status["eligible_event_count"]
+    seen = status["effective_events_seen"]
+    if total != seen:
+        nonzero = {k: v for k, v in status["exclusions_by_reason"].items() if v}
+        raise ReconciliationError(
+            f"terminal classifications ({total}) != effective events seen ({seen}); "
+            f"eligible={status['eligible_event_count']} nonzero_exclusions={nonzero}")
 
 
 def status_digest(status: dict) -> str:
