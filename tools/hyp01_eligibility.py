@@ -46,7 +46,6 @@ has never been executed against a real prospective record.
 """
 from __future__ import annotations
 
-import argparse
 import hashlib
 import json
 import sys
@@ -125,7 +124,32 @@ J_MISSING_MODULE_ELIGIBILITY = "JOIN_REFUSED_MISSING_MODULE_ELIGIBILITY"
 J_UNREADABLE_MODULE_ELIGIBILITY = "JOIN_REFUSED_UNREADABLE_MODULE_ELIGIBILITY"
 J_MARKER_IDENTITY_MISMATCH = "JOIN_REFUSED_MARKER_IDENTITY_MISMATCH"
 
+# Canonical-adapter refusals. Raised while READING the canonical event store,
+# immutable stage markers and operations plan -- before any gate is evaluated.
+# Like every other refusal here, none of them is a scientific disposition: a
+# malformed or mistimed artifact is an operator problem, never an exclusion.
+J_MISSING_EVENT_STORE_LOG = "JOIN_REFUSED_MISSING_EVENT_STORE_LOG"
+J_MISSING_PRE_EVENT_STATE = "JOIN_REFUSED_MISSING_PRE_EVENT_STATE"
+J_MISSING_D1_STATE = "JOIN_REFUSED_MISSING_D1_STATE"
+J_MISSING_D1_MARKER = "JOIN_REFUSED_MISSING_D1_MARKER"
+J_MARKER_STATE_DISAGREEMENT = "JOIN_REFUSED_MARKER_STATE_DISAGREEMENT"
+J_INVALID_STATE_CHRONOLOGY = "JOIN_REFUSED_INVALID_STATE_CHRONOLOGY"
+J_DUPLICATE_STATE_RECORD = "JOIN_REFUSED_DUPLICATE_STATE_RECORD"
+J_MISSING_OPERATIONS_PLAN = "JOIN_REFUSED_MISSING_OPERATIONS_PLAN"
+J_OPERATIONS_PLAN_MISMATCH = "JOIN_REFUSED_OPERATIONS_PLAN_MISMATCH"
+J_OPERATIONS_PLAN_INTEGRITY = "JOIN_REFUSED_OPERATIONS_PLAN_INTEGRITY"
+J_D1_SESSION_MISMATCH = "JOIN_REFUSED_D1_RESPONSE_SESSION_MISMATCH"
+J_REGISTRY_TIMING_STALE = "JOIN_REFUSED_REGISTRY_TIMING_STALE"
+J_MALFORMED_CAPTURE_TIMESTAMP = "JOIN_REFUSED_MALFORMED_CAPTURE_TIMESTAMP"
+J_CAPTURE_BEFORE_PERMITTED_WINDOW = "JOIN_REFUSED_CAPTURE_BEFORE_PERMITTED_WINDOW"
+
 JOIN_REFUSALS = (
+    J_MISSING_EVENT_STORE_LOG, J_MISSING_PRE_EVENT_STATE, J_MISSING_D1_STATE,
+    J_MISSING_D1_MARKER, J_MARKER_STATE_DISAGREEMENT, J_INVALID_STATE_CHRONOLOGY,
+    J_DUPLICATE_STATE_RECORD, J_MISSING_OPERATIONS_PLAN,
+    J_OPERATIONS_PLAN_MISMATCH, J_OPERATIONS_PLAN_INTEGRITY,
+    J_D1_SESSION_MISMATCH, J_REGISTRY_TIMING_STALE,
+    J_MALFORMED_CAPTURE_TIMESTAMP, J_CAPTURE_BEFORE_PERMITTED_WINDOW,
     J_DUPLICATE_EVENT, J_DUPLICATE_LEG, J_MISSING_GST_LEG, J_MISSING_D1_LEG,
     J_KEY_MISMATCH, J_UNEXPECTED_FIELD, J_NO_CAPTURE_TIME,
     J_NO_BASE_REGISTRATION, J_DUPLICATE_BASE_REGISTRATION, J_ORPHAN_AMENDMENT,
@@ -550,7 +574,14 @@ def _sort_key(rec: dict) -> tuple:
 
 def run_driver(registry_root: Path, markers: list[dict], gst_legs: list[dict],
                d1_legs: list[dict]) -> dict:
-    """Deterministic eligibility count over the canonical effective registry.
+    """INTERNAL, TESTABLE PRIMITIVE. Deterministic eligibility count over the
+    canonical effective registry.
+
+    This takes already-extracted legs so synthetic unit tests can drive the
+    ladder directly. It is NOT a production input mechanism: in production the
+    legs come from tools/hyp01_canonical_adapter.py, which derives them from the
+    canonical event store, immutable stage markers and operations plan. Nothing
+    should hand it fabricated evidence outside a test.
 
     Reads inputs and returns a status document; writes nothing. The caller
     persists it.
@@ -638,40 +669,37 @@ def status_digest(status: dict) -> str:
     return _sha256_text(json.dumps(status, sort_keys=True, separators=(",", ":")))
 
 
-def _load_jsonl(p: Path) -> list[dict]:
-    if not p.exists():
-        return []
-    return [json.loads(ln) for ln in p.read_text(encoding="utf-8").splitlines()
-            if ln.strip()]
-
-
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(prog="hyp01_eligibility")
-    ap.add_argument("--registry-root", required=True,
-                    help="directory containing the canonical registry.jsonl")
-    ap.add_argument("--pre-event-markers", required=True,
-                    help="JSONL of PRE_EVENT_CAPTURE stage markers")
-    ap.add_argument("--gst-legs", required=True)
-    ap.add_argument("--d1-legs", required=True)
-    ap.add_argument("--out", help="write the status document here")
-    a = ap.parse_args(argv)
-    try:
-        status = run_driver(Path(a.registry_root),
-                            _load_jsonl(Path(a.pre_event_markers)),
-                            _load_jsonl(Path(a.gst_legs)),
-                            _load_jsonl(Path(a.d1_legs)))
-    except JoinRefusal as e:
-        print(f"REFUSED {e.code}: {e.event_id} {e.detail}".rstrip())
-        return 2
-    body = json.dumps(status, indent=2)
-    if a.out:
-        out = Path(a.out)
-        if out.exists() and out.read_text(encoding="utf-8") == body:
-            print("unchanged; nothing rewritten (idempotent)")
-        else:
-            out.write_text(body, encoding="utf-8")
-    print(body)
-    return 0
+    """This module is NOT a production entry point.
+
+    It previously accepted hand-prepared --pre-event-markers / --gst-legs /
+    --d1-legs JSONL files. Manually fabricated evidence is not canonical
+    evidence: nothing tied those files to the event store, the immutable stage
+    markers or the operations plan, so the engine was testable but the path was
+    not operational.
+
+    The production command is tools/hyp01_canonical_adapter.py, which derives
+    every leg from canonical roots. run_driver(), join_event() and classify()
+    remain importable as INTERNAL, TESTABLE PRIMITIVES for synthetic unit
+    tests -- they are not an input mechanism.
+    """
+    lines = [
+    'hyp01_eligibility is not a production entry point.',
+    '',
+    'Hand-prepared evidence JSONL is no longer accepted: nothing tied those',
+    'files to the canonical event store, stage markers or operations plan.',
+    '',
+    'Use the canonical adapter instead:',
+    '',
+    '  python tools/hyp01_canonical_adapter.py \\',
+    '      --registry-root         <dir with registry.jsonl> \\',
+    '      --event-store-root      <dir with per-event .jsonl logs> \\',
+    '      --marker-root           <dir with immutable stage markers> \\',
+    '      --operations-plan-root  <dir with operations plans> \\',
+    '      --out                   <redacted status document>',
+    ]
+    print(chr(10).join(lines), file=sys.stderr)
+    return 2
 
 
 if __name__ == "__main__":

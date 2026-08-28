@@ -20,6 +20,7 @@ definition and proposes no threshold.
 | 4a | Pre-event module eligibility (S-2 evidence) | `stage_markers.build_stage_marker()` → `module_eligibility` | Implemented |
 | 5 | Exact registry ↔ marker ↔ GST ↔ D1 join | `tools/hyp01_eligibility.py` → `join_event()` | **Added by this PR** |
 | 6 | Eligibility ladder + count to 60 | `tools/hyp01_eligibility.py` → `run_driver()` | **Added by this PR** |
+| 6a | Canonical input adapter (production entry point) | `tools/hyp01_canonical_adapter.py` | **Added by this PR** |
 | 7 | Human-readable progress report | `tools/hyp01_progress_report.py` | Added earlier on this branch |
 | 8 | Cohort freeze at event 60 | Eligibility rules §5 | **Human procedure.** Driver signals; it does not freeze |
 | 9 | SESOI registration | `GST_SESOI_DECISION_REQUEST_FOR_COAUTHOR.md` | **Blocked** — `A9_BLOCKED_MISSING_REGISTERED_SESOI` |
@@ -29,22 +30,54 @@ Stages 1, 8, 9 and 10 are deliberately **not** automatable. Everything this PR a
 
 ## 2. Running the eligibility count
 
+**The production command takes canonical project roots. It does not accept hand-prepared evidence
+files.**
+
 ```
-python tools/hyp01_eligibility.py \
-    --registry-root      <dir containing the canonical registry.jsonl> \
-    --pre-event-markers  <path>/pre_event_markers.jsonl \
-    --gst-legs           <path>/gst_legs.jsonl \
-    --d1-legs            <path>/d1_legs.jsonl \
-    --out                <path>/GST_HYP01_ELIGIBILITY_STATUS.json
+python tools/hyp01_canonical_adapter.py \
+    --registry-root         <dir containing registry.jsonl> \
+    --event-store-root      <dir containing {event_id}.jsonl> \
+    --marker-root           <dir containing {event_id}_{stage}_MARKER.json> \
+    --operations-plan-root  <dir containing {event_id}_OPERATIONS_PLAN.json> \
+    --out                   <redacted status document>
 ```
 
-Exit codes: `0` a status document was produced; `2` the record set is malformed and the driver
-refused (see §4). Re-running with unchanged inputs rewrites nothing and prints
+Exit codes: `0` a status document was produced; `2` the input set is malformed and the adapter
+refused. Re-running over unchanged roots rewrites nothing and prints
 `unchanged; nothing rewritten (idempotent)`.
 
-The status document carries counts, event identifiers, dates, reason codes and provenance hashes.
-**It carries no measurement or outcome value**, and this is enforced by test D1/D2, which stuff
-sentinel values into every fixture field and assert none of them reaches the output.
+`tools/hyp01_eligibility.py` is **not** an entry point. It previously accepted `--gst-legs`,
+`--d1-legs` and `--pre-event-markers` JSONL; running it now prints the canonical command and exits
+`2`. Manually fabricated evidence is not canonical evidence — nothing tied those files to the event
+store, the immutable markers or the operations plan. `run_driver()`, `join_event()` and `classify()`
+remain importable as **internal, testable primitives** for synthetic unit tests; they are not an
+input mechanism.
+
+### Exact artifacts read
+
+| Eligibility field | Canonical source |
+|---|---|
+| S-1 enrollment | effective registry row → `verification_status` |
+| identity, registered timing | effective registry row (`HumanVerifiedEventRegistry.effective_row()`) |
+| S-2 module eligibility | `PRE_EVENT_CAPTURE` marker → `module_eligibility` |
+| S-3 six panel fields + statuses | canonical `PRE_EVENT_CAPTURED` state record → `fields` |
+| S-4 D1 decomposition | canonical `D1_COMPLETE` state record → `fields` |
+| S-6 `abs_overnight_gap` | canonical `D1_COMPLETE` state record → `fields` |
+| GST provenance path/hash | PRE_EVENT record → `source_csv_path` / `source_csv_sha256` |
+| D1 provenance path/hash | D1 marker path + SHA-256 of its bytes |
+| GST capture timestamp | PRE_EVENT record → `written_at_utc` |
+| D1 capture timestamp | D1 record → `written_at_utc` (set by `EventStore.append_state`, never caller-supplied) |
+| permitted D1 window (lower bound) | operations plan → `sessions.D1.earliest_provider_retrieval_utc` |
+| S-8 ordering key | effective registry row → `expected_response_session` |
+
+**No heuristics.** Every artifact is addressed by an exact deterministic path. There is no
+newest-file, nearest-date, glob-and-pick or filename-guessing fallback: if the exact artifact is
+absent, that event refuses.
+
+**Redacted output.** The status document carries counts, event identifiers, dates, reason codes and
+provenance hashes — no measurement or outcome value. The adapter necessarily *reads* outcome fields
+(S-4 and S-6 cannot be evaluated otherwise) but never prints, formats or interprets one, and the
+D1 marker's `response_magnitude` block is projected away before the driver sees it.
 
 ## 3. The eligibility ladder
 
@@ -118,6 +151,48 @@ There is no `event` row type and never was; a row carrying one is refused, not a
 Enrollment status and release timing both come from the **effective** row, so a correction recorded by
 amendment is honoured.
 
+## 3b. D1 response-window validation
+
+Before any gate runs, the adapter proves the D1 evidence belongs to the **registered** response
+window. Every comparison reuses a production function or an authoritative persisted field; no session
+arithmetic is reimplemented.
+
+| Check | Refusal if it fails |
+|---|---|
+| D1 `event_id`, ticker and earnings date come from the effective registration | *unconstructible* — the adapter builds identity from the registration |
+| registry `expected_response_session` still recomputes from the effective row via `compute_expected_next_full_trading_session_xnys()` | `REGISTRY_TIMING_STALE` |
+| operations plan `event.{event_id, ticker, earnings_date, release_market_session}` equal the effective registration | `OPERATIONS_PLAN_MISMATCH` |
+| plan `sessions.D1.session_date` equals the registered `expected_response_session` | `D1_RESPONSE_SESSION_MISMATCH` |
+| plan recomputes to its own `plan_content_sha256` | `OPERATIONS_PLAN_INTEGRITY` |
+| the D1 marker's `response_magnitude` echo equals the D1 state record | `MARKER_STATE_DISAGREEMENT` |
+| D1 `written_at_utc` parses as a timezone-aware ISO-8601 instant | `MALFORMED_CAPTURE_TIMESTAMP` |
+| D1 `written_at_utc` ≥ plan `sessions.D1.earliest_provider_retrieval_utc` | `CAPTURE_BEFORE_PERMITTED_WINDOW` |
+
+**Superseded timing.** An amendment that moves registered timing causes
+`amend_event()` to recompute `expected_response_session`. A capture and plan prepared for the old
+session no longer match, and the event refuses — no locked rule exempts such a capture, so it is not
+reused. In practice the plan-identity check fires first, because an amendment that moves timing
+necessarily changes a field the plan echoes.
+
+**Presence is not validity.** A nonblank but unparseable, malformed or timezone-naive capture
+timestamp refuses. An unparseable instant cannot be compared against the window at all, so accepting
+it would silently skip the window check.
+
+### SPECIFICATION GAP — no upper bound on D1 capture time
+
+The locked artifacts specify only a **lower** bound on when a D1 capture may occur:
+`operations_plan.SessionPlan.earliest_provider_retrieval_utc` (the D1 session's final expected bar
+start plus `ALPACA_MIN_END_AGE_MINUTES = 15`).
+
+**No committed artifact states a latest permissible capture instant.** There is no staleness limit,
+deadline or recency tolerance for D1 in the SPECs (v0.1 or v0.2), the analysis lock, the eligibility
+and freeze rules, the effective lock report, or the code. Searches for `latest`, `deadline`,
+`max_age`, `staleness`, `not_after` and `expires` return only option-quote-age and
+methodology-version matches, neither of which governs D1 capture recency.
+
+**An upper bound is therefore not enforced**, because enforcing one would mean inventing a tolerance.
+This is a specification gap for a human to close, recorded rather than filled.
+
 ## 4. Refusals
 
 A refusal is not a scientific disposition. It means the record set is malformed, no disposition can
@@ -141,6 +216,20 @@ be assigned, and an operator must fix the input.
 | `JOIN_REFUSED_MISSING_MODULE_ELIGIBILITY` | the marker's `module_eligibility` block is null | per event |
 | `JOIN_REFUSED_UNREADABLE_MODULE_ELIGIBILITY` | legacy or malformed block (`LegacyRecordError`) | per event |
 | `JOIN_REFUSED_MARKER_IDENTITY_MISMATCH` | the marker's event, stage or ticker disagrees | per event |
+| `JOIN_REFUSED_MISSING_EVENT_STORE_LOG` | no canonical `{event_id}.jsonl`, or no STATE record | per event |
+| `JOIN_REFUSED_MISSING_PRE_EVENT_STATE` | no `PRE_EVENT_CAPTURED` stage record | per event |
+| `JOIN_REFUSED_MISSING_D1_STATE` | no `D1_COMPLETE` stage record (a PARTIAL D1 does not qualify) | per event |
+| `JOIN_REFUSED_MISSING_D1_MARKER` | no immutable `D1_CAPTURE` marker | per event |
+| `JOIN_REFUSED_MARKER_STATE_DISAGREEMENT` | a marker disagrees with its persisted stage record | per event |
+| `JOIN_REFUSED_INVALID_STATE_CHRONOLOGY` | the state log replays into an illegal transition | per event |
+| `JOIN_REFUSED_DUPLICATE_STATE_RECORD` | duplicate `seq` in the append-only log | per event |
+| `JOIN_REFUSED_MISSING_OPERATIONS_PLAN` | no `{event_id}_OPERATIONS_PLAN.json` | per event |
+| `JOIN_REFUSED_OPERATIONS_PLAN_MISMATCH` | the plan describes a different event | per event |
+| `JOIN_REFUSED_OPERATIONS_PLAN_INTEGRITY` | the plan does not recompute to its own digest | per event |
+| `JOIN_REFUSED_D1_RESPONSE_SESSION_MISMATCH` | the plan's D1 session is not the registered response session | per event |
+| `JOIN_REFUSED_REGISTRY_TIMING_STALE` | `expected_response_session` no longer recomputes | per event |
+| `JOIN_REFUSED_MALFORMED_CAPTURE_TIMESTAMP` | a capture time is unparseable or timezone-naive | per event |
+| `JOIN_REFUSED_CAPTURE_BEFORE_PERMITTED_WINDOW` | D1 captured before the plan's earliest permitted retrieval | per event |
 
 Duplication raises for the whole run because there is no correct per-event answer — choosing one of
 two legs would be a guess. A stray column or a missing leg affects one event, so it refuses that
@@ -219,12 +308,17 @@ rule `D16 = NO_PROJECT_DERIVED_POWER_CLAIM` prohibits.
 ## 8. Verification
 
 ```
+python tools/hyp01_canonical_adapter.py --help   # the production command
+python test_hyp01_canonical_adapter.py  # 47 checks — canonical end-to-end, D1 timing
 python test_hyp01_eligibility.py        # 91 checks — registry, S-2, join, ladder, gate order, provenance
 python test_hyp01_progress_report.py    # 25 checks — redaction, effective registry, deterministic counting
 ```
 
-Both suites are fully offline: a socket guard fails the run on any connection attempt. Every fixture
-is synthetic and built in memory or in a temporary directory. Neither suite reads a project data file.
+All three suites are fully offline: a socket guard fails the run on any connection attempt. Every
+fixture is synthetic. The canonical suite builds its fixtures through the project's own writers --
+`HumanVerifiedEventRegistry`, `EventStore`, `pipeline.capture_*`, `write_stage_marker`,
+`build_operations_plan`/`finalize_plan` -- in a temporary directory, so no raw JSON is substituted
+where a production writer exists. No suite reads a project data file.
 
 The gate arithmetic is tested at the boundary specifically: 59 events do not trigger the freeze, the
 60th does, and 75 still yields exactly 60 with 15 in the extension cohort.
@@ -244,5 +338,24 @@ increment the count, or to contribute to the event-60 freeze.
 - No locked scientific definition was changed; no SESOI was selected or recommended.
 - The live collector, the scheduled task and AVG were not touched.
 - PR #40 remains a draft and is not marked ready.
+- The canonical adapter has never been executed against a real prospective capture artifact.
+
+### Steps that remain human-only
+
+1. **Enrollment.** A human verifies release timing from a primary source and writes the
+   `REGISTRATION` row. No component here enrolls or amends an event.
+2. **Freeze at event 60.** Reaching the gate sets `freeze_required` and REFUSES further counting. The
+   §5 procedure -- freeze the event set, freeze the environment, re-verify S-1..S-8 for all 60 -- is
+   performed by a person. `analysis_authorized` is `false` in every reachable state.
+3. **SESOI registration.** Still absent; A9 remains `A9_BLOCKED_MISSING_REGISTERED_SESOI`.
+4. **Closing the D1 upper-bound specification gap** (see §3b).
+
+### Recorded deviation
+
+A procedural deviation on 2026-08-28 -- the progress reporter was run once against the real registry
+root instead of a synthetic fixture -- is disclosed in
+`Live Signal Engine/GST_HYP01_PROCEDURAL_DEVIATION_RECORD_2026-08-28.md`. It read only whitelisted
+identity fields, opened no capture or outcome artifact, altered nothing, and did not compromise
+outcome blinding.
 - No registry row was written or amended; the canonical registry is read-only to this path.
 - The corrected eligibility driver has never been executed against a real prospective record.
