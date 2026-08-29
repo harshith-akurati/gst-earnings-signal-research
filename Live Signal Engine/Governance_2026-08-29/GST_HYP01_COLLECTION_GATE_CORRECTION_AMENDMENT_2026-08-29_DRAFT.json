@@ -1,0 +1,128 @@
+{
+  "artifact": "GST_HYP01_COLLECTION_GATE_CORRECTION_AMENDMENT_2026-08-29",
+  "schema": "GST_HYP01_DATED_AMENDMENT_v1",
+  "status": "DRAFT_UNSIGNED",
+  "append_only": true,
+  "supersedes_nothing_by_deletion": true,
+  "amends": "GST_HYP01_ANALYSIS_LOCK_AMENDMENT_2026-08-16.json",
+  "amends_field": "/gates/collection_unblock_conditions",
+  "amends_sha256_lf": "11b4df9a6e3321584a617fb2134afae431ac2c84ced193f85279b5bee70b54bd",
+  "base_lock": "GST_HYP01_ANALYSIS_LOCK_v1.0.json",
+  "base_lock_sha256_lf": "85264e9786e42180547a22f320da7384b4a54d1e45c777e40b2f596a982b3805",
+  "authored_at_utc": "2026-08-29",
+  "authored_before_any_eligible_event_or_outcome": true,
+  "eligible_events_at_authorship": 0,
+
+  "defect": {
+    "id": "COLLECTION_GATE_CIRCULARITY",
+    "summary": "The adopted amendment conditions the UNBLOCKING OF COLLECTION on an event that can only occur AFTER collection has completed.",
+    "original_language_preserved_verbatim": {
+      "field": "/gates/collection_unblock_conditions",
+      "value": [
+        "F5 construct validity resolved and recorded",
+        "every other pre-observation gate in the cohort protocol and eligibility rules satisfied",
+        "the event-60 environment freeze recorded per D11"
+      ]
+    },
+    "why_it_is_circular": "The third condition cannot be met before collection. The event-60 environment freeze is defined in D11 and in the eligibility rules section 5 as an act performed once the 60th eligible event exists. Sixty eligible events cannot exist until PRE_EVENT and D1 observations have been collected. Collection therefore requires the freeze, and the freeze requires collection. As written the gate can never open.",
+    "not_a_scientific_error": "The first two conditions are correct and are preserved unchanged. Only the placement of the freeze is wrong: it is a pre-ANALYSIS gate that was written into a pre-COLLECTION list.",
+    "original_language_is_not_deleted": "The verbatim value above is preserved in this record. The adopted amendment's bytes are NOT edited; this is an append-only overlay in the same discipline the base lock and the 2026-08-16 amendment use."
+  },
+
+  "corrected_stage_ordering": [
+    {
+      "stage": 1,
+      "name": "ENROLLMENT",
+      "may_proceed_when": [
+        "an adopted cohort protocol is in force",
+        "a named human has directly observed an official issuer or SEC source establishing the calendar date and a release timing explicit enough to classify BMO/AMC/INTRADAY without inference",
+        "the registration is written from those blinded official inputs alone"
+      ],
+      "explicitly_permitted_before_F5_closure": true,
+      "rationale": "Enrollment consumes only official date and timing inputs. It reads no attention series, no price, no outcome, and nothing whose construct validity F5 questions. Blocking it on F5 would delay the cohort without protecting anything."
+    },
+    {
+      "stage": 2,
+      "name": "PRE_EVENT_OBSERVATION_COLLECTION",
+      "may_proceed_when": [
+        "F5 construct validity is resolved and recorded",
+        "every other pre-observation scientific gate is closed and recorded",
+        "external preregistration has been submitted and timestamped by an external registry"
+      ],
+      "explicitly_prohibited_before_F5_closure": true,
+      "rationale": "The pre-event snapshot IS the first observation, and F5 governs what that observation measures. The gap audit's F5 deadline is BEFORE_FIRST_OBSERVATION; capturing first and settling F5 afterwards would violate that deadline by definition."
+    },
+    {
+      "stage": 3,
+      "name": "D1_OBSERVATION_COLLECTION",
+      "may_proceed_when": [
+        "a valid PRE_EVENT capture exists for that event",
+        "the D1 capture falls inside the authorized D1 window"
+      ],
+      "rationale": "The state machine forbids D1 without a captured pre-event stage; this records that dependency explicitly rather than leaving it implicit in code."
+    },
+    {
+      "stage": 4,
+      "name": "EVENT_60_ENVIRONMENT_FREEZE",
+      "may_proceed_when": [
+        "exactly 60 eligible events have accrued under the registered ordering",
+        "the 60 event IDs have been enumerated and hashed into an immutable artifact",
+        "all S-1..S-8 gates have been re-verified for all 60"
+      ],
+      "occurs": "AFTER accrual of the exact 60-event set and BEFORE the primary analysis",
+      "explicitly_not_a_precondition_for_collection": true,
+      "rationale": "This is the correction. D11's environment freeze records the language version, statistics package, package version, cluster-covariance option string, finite-sample-correction option, random seed and analysis-code commit SHA. Those are recorded at the freeze so the environment cannot drift between accrual and the single analysis run."
+    },
+    {
+      "stage": 5,
+      "name": "PRIMARY_ANALYSIS",
+      "may_proceed_when": [
+        "the event-60 freeze is recorded",
+        "a named human authorizer has been assigned and recorded (gap-audit E9)"
+      ],
+      "runs": "exactly once",
+      "prohibited_until_freeze": true
+    }
+  ],
+
+  "corrected_collection_unblock_conditions": [
+    "F5 construct validity resolved and recorded",
+    "every other pre-observation scientific gate in the cohort protocol and eligibility rules satisfied",
+    "external preregistration submitted to an external timestamped registry"
+  ],
+  "removed_from_collection_unblock_conditions": [
+    "the event-60 environment freeze recorded per D11"
+  ],
+  "where_the_removed_condition_now_belongs": "stage 4, EVENT_60_ENVIRONMENT_FREEZE: after accrual of the exact 60-event set and before the primary analysis",
+
+  "what_this_amendment_does_not_do": [
+    "It changes no statistical rule. D1-D16 are untouched.",
+    "It changes no eligibility gate, threshold, formula, ordering or timing window.",
+    "It does not close F5.",
+    "It does not authorize collection, enrollment, analysis or activation.",
+    "It does not edit the adopted lock or the 2026-08-16 amendment in place."
+  ],
+
+  "gates_after_this_amendment": {
+    "f5_construct_validity": "OPEN",
+    "f5_closed_by_this_amendment": false,
+    "prospective_collection": "BLOCKED",
+    "enrollment": "PERMITTED_UNDER_AN_ADOPTED_COHORT_PROTOCOL",
+    "analysis_run": false,
+    "external_preregistration_performed": false,
+    "scientific_result": null
+  },
+
+  "authorization": {
+    "status": "UNSIGNED",
+    "required_approvers": 2,
+    "approver_1_name": "",
+    "approver_1_signature": "",
+    "approver_1_timestamp": "",
+    "approver_2_name": "",
+    "approver_2_signature": "",
+    "approver_2_timestamp": "",
+    "effective_from": "",
+    "prospective_only": "This amendment takes effect from its approval timestamp. It does not retroactively reclassify any event and creates no pre-approval deadline."
+  }
+}
