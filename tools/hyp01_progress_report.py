@@ -35,6 +35,7 @@ it does not supply a SESOI, an equivalence procedure, or a power calculation.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from collections import Counter
@@ -42,7 +43,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
-BINDING_TARGET = 60  # GST_HYP01_EFFECTIVE_LOCK_REPORT_v1.0.json freeze_and_display.threshold
+BINDING_TARGET = 60
+CANONICAL_STATUS_SCHEMA = "GST_HYP01_ELIGIBILITY_STATUS_v1"  # GST_HYP01_EFFECTIVE_LOCK_REPORT_v1.0.json freeze_and_display.threshold
 
 # Registered dispositions, verbatim from the eligibility ladder, section 1.
 REASONS = (
@@ -56,11 +58,15 @@ REASONS = (
     "EXTENSION_COHORT",
 )
 
+# NOTE: the cohort protocol is deliberately ABSENT from this list. Both
+# committed versions carry status: DRAFT and are adopted by no authorization
+# artifact, so their absence is not a defect and their presence proves nothing.
+# A cohort protocol is listed again only once an adopted instrument names the
+# authoritative path.
 REQUIRED_ARTIFACTS = (
     "Live Signal Engine/GST_HYP01_ELIGIBILITY_AND_FREEZE_RULES_v1.0.md",
     "Live Signal Engine/GST_HYP01_EFFECTIVE_LOCK_REPORT_v1.0.json",
     "Live Signal Engine/GST_PROSPECTIVE_HYPOTHESIS_REGISTRY_v1.0.json",
-    "Live Signal Engine/GST_PROSPECTIVE_COHORT_PROTOCOL_v1.0.json",
     "Live Signal Engine/Market_Response_Event_Registry/registry.jsonl",
 )
 
@@ -144,77 +150,148 @@ def captured_dates(root: Path) -> list[str]:
 
 
 def classify(events: list[dict]) -> tuple[int, Counter]:
-    """Apply only the dispositions decidable from identity/provenance fields.
+    """Registry-only enrollment status. **This is not an eligibility evaluation.**
 
-    Any event whose eligibility cannot be decided without reading a measurement
-    is counted as UNDETERMINED_REQUIRES_OUTCOME_CAPTURE rather than guessed. This
-    tool will not open an outcome to settle a gate.
+    The eligibility ladder S-2..S-7 needs the pre-event marker, the GST evidence,
+    the D1 evidence and the operations plan. This tool opens none of them, so it
+    cannot determine any of those gates and does not pretend to.
+
+    What changed and why. This function used to return `eligible = 0` and let the
+    caller present that as a real eligible-event count with a
+    `remaining_until_target` derived from it. Zero-because-unevaluated is not
+    zero-because-assessed, and reporting the two identically overstated what was
+    known. It also assigned MEASUREMENT_INCOMPATIBLE_INTRADAY -- a terminal S-7
+    disposition -- to an event whose S-2..S-6 gates had never been evaluated,
+    inverting the registered gate order.
+
+    Now: registry-derived facts only, labelled descriptively.
     """
-    excl = Counter({r: 0 for r in REASONS})
-    excl["UNDETERMINED_REQUIRES_OUTCOME_CAPTURE"] = 0
-    excl["STRUCTURAL_REGISTRY_PROBLEM"] = 0
-    eligible = 0
+    counts = Counter({
+        "ENROLLED_AWAITING_EVALUATION": 0,
+        "NOT_ENROLLED": 0,
+        "STRUCTURAL_REGISTRY_PROBLEM": 0,
+    })
+    # Descriptive registry-only observations. NOT dispositions, NOT terminal.
+    descriptive = Counter({
+        "registered_session_bmo_or_amc": 0,
+        "registered_session_intraday": 0,
+        "registered_session_absent": 0,
+    })
     for e in events:
-        # Canonical row types are REGISTRATION and AMENDMENT. Amendments are
-        # already folded away by the effective view, so anything reaching here
-        # that is not a REGISTRATION is a structural problem -- NOT a scientific
-        # exclusion, and certainly not NOT_ENROLLED.
         if e.get("row_type") != ROW_REGISTRATION:
-            excl["STRUCTURAL_REGISTRY_PROBLEM"] += 1
+            counts["STRUCTURAL_REGISTRY_PROBLEM"] += 1
             continue
         if str(e.get("verification_status", "")).lower() != "verified":
-            excl["NOT_ENROLLED"] += 1
+            counts["NOT_ENROLLED"] += 1
             continue
-        # S-7 reads the registered release session ONLY. expected_response_session
-        # is a DATE and was never a session; using it as a fallback made every
-        # event look intraday.
+        counts["ENROLLED_AWAITING_EVALUATION"] += 1
         session = str(e.get("release_market_session") or "").upper()
-        if session not in ("BMO", "AMC"):
-            if session == "":
-                excl["STRUCTURAL_REGISTRY_PROBLEM"] += 1
-            else:
-                excl["MEASUREMENT_INCOMPATIBLE_INTRADAY"] += 1
-            continue
-        # Steps 3-6 need the market-response capture legs, which are outcome
-        # data. Not read here, by design.
-        excl["UNDETERMINED_REQUIRES_OUTCOME_CAPTURE"] += 1
-    return eligible, excl
+        if session in ("BMO", "AMC"):
+            descriptive["registered_session_bmo_or_amc"] += 1
+        elif session:
+            # Registry-only observation. S-7 is NOT applied here: an event whose
+            # S-2..S-6 gates are unevaluated has no terminal disposition, and an
+            # INTRADAY registration is descriptive until the ladder runs.
+            descriptive["registered_session_intraday"] += 1
+        else:
+            descriptive["registered_session_absent"] += 1
+    return counts, descriptive
+
+
+def read_canonical_status(path: Path) -> tuple[dict | None, str]:
+    """Load a canonical eligibility-status document, verifying schema and digest.
+
+    This is the ONLY source from which a real eligible-event count may be
+    rendered. Anything unverifiable yields (None, reason) and the caller falls
+    back to NOT_EVALUATED rather than inventing a count.
+    """
+    if path is None:
+        return None, "no canonical status document supplied"
+    p = Path(path)
+    if not p.is_file():
+        return None, f"canonical status document not found: {p}"
+    try:
+        doc = json.loads(p.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        return None, f"canonical status document is not valid JSON: {exc}"
+    if not isinstance(doc, dict):
+        return None, "canonical status document is not a JSON object"
+    if doc.get("schema") != CANONICAL_STATUS_SCHEMA:
+        return None, (f"schema is {doc.get('schema')!r}, expected "
+                      f"{CANONICAL_STATUS_SCHEMA!r}")
+    for field in ("eligible_event_count", "binding_target", "effective_events_seen",
+                  "exclusions_by_reason", "registry_snapshot_sha256"):
+        if field not in doc:
+            return None, f"canonical status document lacks {field!r}"
+    # Digest of the document's own bytes, so a reader can tie a rendered count
+    # back to the exact artifact it came from.
+    digest = hashlib.sha256(p.read_bytes()).hexdigest()
+    doc["_status_document_sha256"] = digest
+    doc["_status_document_path"] = p.as_posix()
+    return doc, "ok"
 
 
 def missing_artifacts(root: Path) -> list[str]:
     return [a for a in REQUIRED_ARTIFACTS if not (root / a).exists()]
 
 
-def build_report(root: Path) -> dict:
+def build_report(root: Path, canonical_status: Path | None = None) -> dict:
     events, reg_err, amendment_rows = load_registry(root)
-    eligible, excl = classify(events)
+    counts, descriptive = classify(events)
+    status_doc, status_note = read_canonical_status(canonical_status)
     dates = captured_dates(root)
-    return {
+    rep = {
         "binding_target": BINDING_TARGET,
-        "eligible_event_count": eligible,
-        "remaining_until_target": max(0, BINDING_TARGET - eligible),
         "effective_events_seen": len(events),
         "amendment_rows_folded": amendment_rows,
         "registry_error": reg_err,
+        "enrollment_counts": dict(counts),
+        "registry_only_observations": dict(descriptive),
         "captured_panel_dates": dates,
         "captured_panel_date_count": len(dates),
-        "exclusions_by_reason": dict(excl),
         "missing_required_artifacts": missing_artifacts(root),
         "notes": [
             "Read-only. No file was written.",
             "No search, price, return, gap or outcome value was read or printed.",
-            "Eligibility steps requiring market-response capture are reported as "
-            "UNDETERMINED_REQUIRES_OUTCOME_CAPTURE, never guessed.",
-            "Reaching the target licenses a human freeze procedure; this tool "
-            "does not freeze anything.",
             "Registry rows are REGISTRATION and AMENDMENT. Amendments are folded "
             "into one effective event by HumanVerifiedEventRegistry.effective_row() "
             "and are never counted as separate events.",
-            "A verified REGISTRATION is enrolled. It may still lack the capture "
-            "legs a later gate needs; that is reported structurally, never as an "
-            "enrollment failure.",
+            "enrollment_counts are REGISTRY-DERIVED ONLY. registry_only_observations "
+            "are descriptive, not dispositions: S-7 is never applied here, because "
+            "S-2..S-6 cannot be evaluated without evidence this tool does not open.",
         ],
     }
+
+    if status_doc is not None:
+        # A verified canonical status document is the ONLY source of a real
+        # eligible-event count.
+        rep["eligibility_evaluated"] = True
+        rep["eligible_event_count"] = status_doc["eligible_event_count"]
+        rep["remaining_until_target"] = max(
+            0, BINDING_TARGET - int(status_doc["eligible_event_count"]))
+        rep["exclusions_by_reason"] = status_doc["exclusions_by_reason"]
+        rep["canonical_status_document"] = {
+            "path": status_doc["_status_document_path"],
+            "sha256": status_doc["_status_document_sha256"],
+            "schema": status_doc["schema"],
+            "registry_snapshot_sha256": status_doc["registry_snapshot_sha256"],
+        }
+        rep["notes"].append(
+            "Eligibility counts were read from the canonical status document named "
+            "above, whose schema and SHA-256 were verified.")
+    else:
+        rep["eligibility_evaluated"] = False
+        rep["eligible_event_count"] = "NOT_EVALUATED"
+        rep["remaining_until_target"] = "NOT_EVALUATED"
+        rep["exclusions_by_reason"] = "NOT_EVALUATED"
+        rep["canonical_status_document"] = None
+        rep["eligibility_not_evaluated_reason"] = status_note
+        rep["notes"].append(
+            "NO eligible-event count is reported. Eligibility was NOT evaluated: "
+            + status_note + ". A zero here would mean 'unevaluated', not "
+            "'assessed and found zero', so no count and no remaining_until_target "
+            "is derived.")
+    return rep
 
 
 def render(rep: dict) -> str:
@@ -227,12 +304,28 @@ def render(rep: dict) -> str:
     L.append(f"  remaining until target    : {rep['remaining_until_target']}")
     L.append(f"  effective events seen     : {rep['effective_events_seen']}")
     L.append(f"  amendment rows folded     : {rep['amendment_rows_folded']}")
+    L.append(f"  eligibility evaluated     : {rep['eligibility_evaluated']}")
+    for k, v in rep["enrollment_counts"].items():
+        L.append(f"    {k:38}: {v}")
+    L.append("  registry-only observations (descriptive, not dispositions):")
+    for k, v in rep["registry_only_observations"].items():
+        L.append(f"    {k:38}: {v}")
     L.append(f"  captured panel dates      : {rep['captured_panel_date_count']}")
     for d in rep["captured_panel_dates"]:
         L.append(f"      {d}")
-    L.append("  exclusions by registered reason:")
-    for k in sorted(rep["exclusions_by_reason"]):
-        L.append(f"      {k:42} {rep['exclusions_by_reason'][k]}")
+    if rep["eligibility_evaluated"]:
+        L.append(f"  eligible events           : {rep['eligible_event_count']}")
+        L.append(f"  remaining until target    : {rep['remaining_until_target']}")
+        csd = rep["canonical_status_document"]
+        L.append(f"  canonical status doc      : {csd['path']}")
+        L.append(f"    sha256                  : {csd['sha256']}")
+        L.append("  exclusions by registered reason:")
+        for k in sorted(rep["exclusions_by_reason"]):
+            L.append(f"      {k:42} {rep['exclusions_by_reason'][k]}")
+    else:
+        L.append("  eligible events           : NOT_EVALUATED")
+        L.append("  remaining until target    : NOT_EVALUATED")
+        L.append(f"    reason                  : {rep['eligibility_not_evaluated_reason']}")
     miss = rep["missing_required_artifacts"]
     L.append(f"  missing required artifacts: {len(miss)}")
     for m in miss:

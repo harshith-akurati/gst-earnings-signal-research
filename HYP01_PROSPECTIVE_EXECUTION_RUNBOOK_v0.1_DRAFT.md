@@ -1,7 +1,8 @@
 # HYP-01 prospective execution runbook — v0.1 DRAFT
 
 **Status:** draft, on branch `hyp01-prospective-readiness-20260828` (draft PR #40). Not merged, not
-authorized, not scheduled. **Nothing described here has been run against real prospective data.**
+authorized, not scheduled. **This work is NOT activation-ready**: F5 is open, no external
+preregistration exists, and the collection gate carries a recorded circularity defect (§6a). **Nothing described here has been run against real prospective data.**
 
 **Scope:** how the prospective HYP-01 path is executed once collection is under way, who decides what,
 and where the path is still blocked. This is an operations document. It changes no scientific
@@ -23,7 +24,7 @@ definition and proposes no threshold.
 | 6a | Canonical input adapter (production entry point) | `tools/hyp01_canonical_adapter.py` | **Added by this PR** |
 | 7 | Human-readable progress report | `tools/hyp01_progress_report.py` | Added earlier on this branch |
 | 8 | Cohort freeze at event 60 | Eligibility rules §5 | **Human procedure.** Driver signals; it does not freeze |
-| 9 | SESOI registration | `GST_SESOI_DECISION_REQUEST_FOR_COAUTHOR.md` | **Blocked** — `A9_BLOCKED_MISSING_REGISTERED_SESOI` |
+| 9 | SESOI registration | `GST_SESOI_DECISION_REQUEST_FOR_COAUTHOR.md` | **Not required for the primary test** — see §7a |
 | 10 | Primary model, run once | locked in `GST_HYP01_ANALYSIS_LOCK_v1.0.json` | **Blocked** until 8 and 9 complete |
 
 Stages 1, 8, 9 and 10 are deliberately **not** automatable. Everything this PR adds stops at stage 7.
@@ -92,6 +93,8 @@ rearranged.**
 | S-2 | Does the **persisted pre-event module eligibility** admit the core family? | `CLASS_INELIGIBLE` |
 | S-3 | Do all six panel fields pass the strict v0.2 core gate? | `CORE_GATE_FAILED` |
 | S-4 | Is the D1 decomposition complete? | `D1_GATE_FAILED` |
+
+**A stage-specific D1 `PARTIAL` is valid evidence.** `pipeline.capture_d1()` writes it precisely to preserve the incomplete D1 fields, and the ladder reads it and reaches `D1_GATE_FAILED` — the registered scientific disposition. It is **not** a missing state. Only a genuinely absent D1 record, or a `PARTIAL` belonging to another stage, is structural.
 | S-5 | Is `gst_zscore` present with a successful status and valid provenance? | `GST_PROVENANCE_FAILED` |
 | S-6 | Is `abs_overnight_gap` present with valid market-data provenance? | `OUTCOME_MISSING` |
 | S-7 | Is the **registered** release session BMO or AMC? | `MEASUREMENT_INCOMPATIBLE_INTRADAY` |
@@ -296,7 +299,7 @@ be assigned, and an operator must fix the input.
 | `JOIN_REFUSED_MARKER_IDENTITY_MISMATCH` | the marker's event, stage or ticker disagrees | per event |
 | `JOIN_REFUSED_MISSING_EVENT_STORE_LOG` | no canonical `{event_id}.jsonl`, or no STATE record | per event |
 | `JOIN_REFUSED_MISSING_PRE_EVENT_STATE` | no `PRE_EVENT_CAPTURED` stage record | per event |
-| `JOIN_REFUSED_MISSING_D1_STATE` | no `D1_COMPLETE` stage record (a PARTIAL D1 does not qualify) | per event |
+| `JOIN_REFUSED_MISSING_D1_STATE` | no D1 stage record at all, or one belonging to another stage | per event |
 | `JOIN_REFUSED_MISSING_D1_MARKER` | no immutable `D1_CAPTURE` marker | per event |
 | `JOIN_REFUSED_MARKER_STATE_DISAGREEMENT` | a marker disagrees with its persisted stage record | per event |
 | `JOIN_REFUSED_INVALID_STATE_CHRONOLOGY` | the state log replays into an illegal transition | per event |
@@ -308,6 +311,10 @@ be assigned, and an operator must fix the input.
 | `JOIN_REFUSED_REGISTRY_TIMING_STALE` | `expected_response_session` no longer recomputes | per event |
 | `JOIN_REFUSED_MALFORMED_CAPTURE_TIMESTAMP` | a capture time is unparseable or timezone-naive | per event |
 | `JOIN_REFUSED_CAPTURE_BEFORE_PERMITTED_WINDOW` | D1 captured before the plan's earliest permitted retrieval | per event |
+| `JOIN_REFUSED_PRE_EVENT_ANCHOR_MISMATCH` | the plan's pre-event anchor is not the mechanically derived one | per event |
+| `JOIN_REFUSED_PRE_EVENT_PANEL_DATE_MISMATCH` | the snapshot / panel date is not the derived anchor session | per event |
+| `JOIN_REFUSED_MALFORMED_SNAPSHOT_TIMESTAMP` | `pre_event_snapshot_asof_utc` unparseable or timezone-naive | per event |
+| `JOIN_REFUSED_MISSING_REGISTRY_ROOT` / `_REGISTRY_FILE` / `_EVENT_STORE_ROOT` / `_MARKER_ROOT` / `_OPERATIONS_PLAN_ROOT` | a canonical root or `registry.jsonl` is absent — **never an empty cohort** | whole run raises |
 
 Duplication raises for the whole run because there is no correct per-event answer — choosing one of
 two legs would be a guess. A stray column or a missing leg affects one event, so it refuses that
@@ -370,6 +377,41 @@ not, but it remains procedurally blocked.
 `D1_REQUIRED_FIELDS` is a locked completeness gate and was **not** modified — `abs_overnight_gap` is a
 derived output, not a new completeness requirement, exactly as the lock states.
 
+## 6a. Stage ordering — four distinct things, often conflated
+
+| Stage | What it is | What gates it |
+|---|---|---|
+| **Enrollment** | A named human writes a verified `REGISTRATION` row from directly observed issuer date/timing evidence | An adopted cohort protocol. Uses blinded official inputs only; touches no measurement |
+| **Observation collection** | PRE_EVENT capture, then D1 capture | **F5 and every other pre-observation scientific gate closed**, and external preregistration timestamped. D1 follows only a valid PRE_EVENT capture |
+| **Event-60 freeze** | Freeze the exact 60 event IDs, then the environment (D11) | Accrual of 60 eligible events. Happens **after** collection, **before** analysis |
+| **Analysis** | The single authorized primary-model run | The freeze, plus a named authorizer (gap-audit E9) |
+
+**Governance defect, recorded not resolved.** The adopted amendment's
+`gates.collection_unblock_conditions` lists *"the event-60 environment freeze recorded per D11"* as a
+condition for **unblocking collection**. That is circular: the 60-event set cannot accrue without
+collection, and the freeze cannot be recorded without the 60-event set. The freeze belongs **after**
+accrual and **before** analysis, as in the table above. A correction amendment is drafted on branch
+`hyp01-preobservation-governance-20260829`; **the adopted amendment is not edited in place**, and this
+runbook does not act on the correction.
+
+## 7a. When a SESOI is actually needed
+
+**A SESOI is NOT required for the locked primary test.** The registered primary analysis is
+`abs_overnight_gap ~ gst_zscore`, OLS, ticker-clustered, **two-sided at α = 0.05** — a test of whether
+the effect is zero. That test needs no smallest-effect-of-interest.
+
+A SESOI is required only if a human authorizes one of:
+
+| Procedure | Needs a SESOI? |
+|---|---|
+| The locked two-sided zero-effect primary test | **No** |
+| An **equivalence** procedure (e.g. TOST) | **Yes** — and it is a separate authorization; approving a SESOI does not authorize it |
+| An **A9 design-sensitivity / power** analysis | **Yes** |
+
+Neither an equivalence procedure nor an A9 analysis is currently authorized. Absent both, **the
+missing SESOI does not block the primary test** — and a null result must still never be described as
+demonstrating equivalence.
+
 ## 7. What is still blocked
 
 | Blocker | Nature | Who resolves it |
@@ -388,9 +430,9 @@ rule `D16 = NO_PROJECT_DERIVED_POWER_CLAIM` prohibits.
 ```
 python tools/hyp01_canonical_adapter.py --help   # the production command
 python test_hyp01_canonical_adapter.py  # 48 checks — canonical end-to-end, D1 timing
-python test_hyp01_first_failure_classification.py  # 57 checks — one event, one classification; progressive ladder
+python test_hyp01_first_failure_classification.py  # 75 checks — one event, one classification; progressive ladder
 python test_hyp01_eligibility.py        # 91 checks — registry, S-2, join, ladder, gate order, provenance
-python test_hyp01_progress_report.py    # 25 checks — redaction, effective registry, deterministic counting
+python test_hyp01_progress_report.py    # 31 checks — redaction, effective registry, deterministic counting
 ```
 
 All three suites are fully offline: a socket guard fails the run on any connection attempt. Every

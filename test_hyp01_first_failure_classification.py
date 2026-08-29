@@ -50,7 +50,7 @@ from gst_market_response import pipeline                                   # noq
 from gst_market_response.event_record import EventStore                    # noqa: E402
 from gst_market_response.event_registry import HumanVerifiedEventRegistry  # noqa: E402
 from gst_market_response.exchange_calendar import (                        # noqa: E402
-    is_trading_day, session_close_utc, session_open_utc,
+    is_trading_day, previous_session, session_close_utc, session_open_utc,
 )
 from gst_market_response.operations_plan import (                          # noqa: E402
     build_operations_plan, finalize_plan,
@@ -108,14 +108,20 @@ class Roots:
         return A.run_canonical(self.registry, self.store, self.markers, self.plans)
 
 
-def core_fields(**over):
+def core_fields(anchor=None, **over):
+    """`anchor` is the event's mechanically derived pre-event anchor. The
+    snapshot and panel dates must equal it, or the adapter refuses -- that
+    binding is the point of the PRE_EVENT anchor check."""
+    a = (anchor.isoformat() if hasattr(anchor, "isoformat") else anchor) or "2026-08-03"
     f = {**{k: SENT[k] for k in ("gst_zscore", "wiki_zscore",
                                  "panel_implied_volatility", "realized_volatility",
                                  "previous_close", "volume")},
          "source_status_gst": "ok", "source_status_wiki": "ok",
          "source_status_iv": "ok", "source_status_realized_vol": "ok",
          "source_status_price": "ok",
-         "pre_event_snapshot_asof_utc": "2026-08-03T13:00:00+00:00",
+         "pre_event_snapshot_asof_utc": f"{a}T13:00:00+00:00",
+         "run_date": a,
+         "price_asof_date": a,
          "source_csv_path": "synthetic/panel.csv", "source_csv_sha256": HASH_A,
          "source_marker_path": "synthetic/pm.json", "source_marker_sha256": HASH_B,
          "methodology_version": "market_response_v0.2",
@@ -174,12 +180,13 @@ def build_event(r, ticker, fy, earnings, *, status="verified", session="AMC",
                 with_d1_marker=True, with_plan=True, core=None, d1=None):
     row = register(r, ticker, fy, earnings, status=status, session=session)
     eid = row.event_id
+    anchor = previous_session(earnings)
     pipeline.register_event(r.es, eid, {"ticker": ticker})
     if not with_pre:
         with_d1 = False
     if with_pre:
         pipeline.capture_pre_event_and_option_benchmark_v0_2(
-            r.es, eid, core if core is not None else core_fields(), dict(OPT))
+            r.es, eid, core if core is not None else core_fields(anchor), dict(OPT))
         if with_pre_marker:
             write_stage_marker(r.markers, eid, STAGE_PRE_EVENT, r.es)
     if with_d1:
@@ -457,7 +464,7 @@ def main() -> int:
     # PARTIAL. The ladder must reach the registered SCIENTIFIC disposition.
     r = Roots()
     eid = build_event(r, "DELL", "FY27Q2", date(2026, 8, 3),
-                      core=core_fields(wiki_zscore=None), with_d1=False)
+                      core=core_fields(previous_session(date(2026, 8, 3)), wiki_zscore=None), with_d1=False)
     states = [x for x in r.es.read_all(eid) if x["record_type"] == "STATE"]
     from gst_market_response.event_record import (                      # noqa: E402
         FAILURE_STAGE_D1, FAILURE_STAGE_PRE_EVENT, partial_failure_stage,
@@ -475,11 +482,12 @@ def main() -> int:
           nonzero(st) == {"CLASS_INELIGIBLE": 1}, json.dumps(nonzero(st)))
     check("10d. exactly one terminal classification",
           terminal_total(st) == 1 == st["effective_events_seen"])
-    later = [o for o in opened
-             if o.endswith("_D1_CAPTURE_MARKER.json")
-             or o.endswith("_OPERATIONS_PLAN.json")]
-    check("10e. no D1 marker or operations plan was opened after S-2 failed",
-          not later, str(later))
+    # NOTE: since the PRE_EVENT anchor binding was added, the operations plan is
+    # opened BEFORE S-2 -- it carries the anchor the PRE_EVENT evidence must be
+    # bound to, so it is no longer "later" work. The D1 short-circuit guarantee
+    # is unchanged and is what this check now asserts.
+    later = [o for o in opened if o.endswith("_D1_CAPTURE_MARKER.json")]
+    check("10e. no D1 marker was opened after S-2 failed", not later, str(later))
 
     # -- D1 decomposition failure, written by the production writer ----------
     r = Roots()
@@ -504,7 +512,7 @@ def main() -> int:
     # -- a PARTIAL belonging to the wrong stage is never reassigned ----------
     r = Roots()
     eid = build_event(r, "DELL", "FY27Q2", date(2026, 8, 3),
-                      core=core_fields(wiki_zscore=None), with_d1=False)
+                      core=core_fields(previous_session(date(2026, 8, 3)), wiki_zscore=None), with_d1=False)
     states = A.read_state_log(EventStore(r.store), eid)
     try:
         A._stage_record(states, FAILURE_STAGE_D1, eid, A.D1_OK_STATES,
@@ -517,7 +525,7 @@ def main() -> int:
     # -- a valid PARTIAL whose marker is absent stays STRUCTURAL -------------
     r = Roots()
     build_event(r, "DELL", "FY27Q2", date(2026, 8, 3),
-                core=core_fields(wiki_zscore=None), with_pre_marker=False,
+                core=core_fields(previous_session(date(2026, 8, 3)), wiki_zscore=None), with_pre_marker=False,
                 with_d1=False)
     st = r.status()
     check("10k. a PRE_EVENT PARTIAL with no marker is a precise structural "
@@ -537,7 +545,7 @@ def main() -> int:
     ok_id = build_event(r, "AAPL", "FY27Q2", date(2026, 8, 3))          # eligible
     register(r, "MSFT", "FY27Q2", date(2026, 8, 4), status="pending")   # S-1
     build_event(r, "ADBE", "FY27Q2", date(2026, 8, 5),                  # S-2
-                core=core_fields(wiki_zscore=None), with_d1=False)
+                core=core_fields(previous_session(date(2026, 8, 5)), wiki_zscore=None), with_d1=False)
     build_event(r, "AMZN", "FY27Q2", date(2026, 8, 6),                  # S-4
                 d1=d1_fields(open_to_30m=None))
     build_event(r, "DELL", "FY27Q2", date(2026, 8, 7), with_d1_marker=False)  # structural
@@ -555,6 +563,123 @@ def main() -> int:
           terminal_total(st) == 6, str(terminal_total(st)))
     check("11e. every category is represented exactly once",
           all(v == 1 for v in expected.values()) and len(expected) == 5)
+
+    print("\n=== 12. missing canonical roots fail closed and create nothing ===")
+
+    # HumanVerifiedEventRegistry.__init__ calls mkdir(parents=True, exist_ok=True),
+    # so merely CONSTRUCTING it against a missing path creates that path and then
+    # reads zero rows -- silently turning a broken invocation into a clean
+    # "0 eligible events" report. The guard must fire before any constructor.
+    base = TMP / "rootcheck"
+    base.mkdir(parents=True, exist_ok=True)
+    good = Roots()
+    build_event(good, "DELL", "FY27Q2", date(2026, 8, 3))
+    absent = base / "does_not_exist"
+
+    cases = [
+        ("registry root",     (absent, good.store, good.markers, good.plans), EL.J_MISSING_REGISTRY_ROOT),
+        ("event-store root",  (good.registry, absent, good.markers, good.plans), EL.J_MISSING_EVENT_STORE_ROOT),
+        ("marker root",       (good.registry, good.store, absent, good.plans), EL.J_MISSING_MARKER_ROOT),
+        ("operations-plan root", (good.registry, good.store, good.markers, absent), EL.J_MISSING_PLAN_ROOT),
+    ]
+    for label, args, want in cases:
+        before = sorted(x.name for x in base.iterdir())
+        try:
+            A.run_canonical(*args)
+            ok, got = False, "NO REFUSAL"
+        except EL.JoinRefusal as e:
+            ok, got = e.code == want, e.code
+        after = sorted(x.name for x in base.iterdir())
+        check(f"12. missing {label} -> {want}", ok, got)
+        check(f"12. missing {label} created nothing on disk",
+              before == after and not absent.exists(),
+              f"created {set(after) - set(before)}")
+
+    # An empty directory with no registry.jsonl is NOT an empty cohort.
+    empty = base / "empty_registry_root"
+    empty.mkdir(exist_ok=True)
+    try:
+        A.run_canonical(empty, good.store, good.markers, good.plans)
+        ok, got = False, "NO REFUSAL"
+    except EL.JoinRefusal as e:
+        ok, got = e.code == EL.J_MISSING_REGISTRY_FILE, e.code
+    check("12. a registry root with no registry.jsonl refuses; it is never read "
+          "as a valid zero-event cohort", ok, got)
+
+    # And the guard is reachable through the primitive too.
+    try:
+        EL.load_registry_snapshot(absent)
+        ok, got = False, "NO REFUSAL"
+    except EL.JoinRefusal as e:
+        ok, got = e.code == EL.J_MISSING_REGISTRY_ROOT, e.code
+    check("12. load_registry_snapshot refuses a missing root before constructing", ok, got)
+    check("12. the missing path was still not created", not absent.exists())
+
+    print("\n=== 13. PRE_EVENT evidence is bound to the registered anchor ===")
+
+    # Baseline: a correctly anchored event reaches the end of the ladder.
+    r = Roots()
+    eid = build_event(r, "DELL", "FY27Q2", date(2026, 8, 3))
+    check("13a. correctly anchored PRE_EVENT evidence passes the binding",
+          r.status()["eligible_event_count"] == 1,
+          json.dumps(nonzero(r.status())))
+
+    # The snapshot must fall on the derived anchor session, not another session.
+    r = Roots()
+    wrong = previous_session(previous_session(date(2026, 8, 3)))
+    build_event(r, "DELL", "FY27Q2", date(2026, 8, 3),
+                core=core_fields(wrong))
+    st = r.status()
+    check("13b. a snapshot taken on the wrong session refuses before S-2",
+          nonzero(st) == {EL.J_PRE_EVENT_PANEL_DATE_MISMATCH: 1}, json.dumps(nonzero(st)))
+
+    # A panel run_date that disagrees with the anchor refuses.
+    r = Roots()
+    a = previous_session(date(2026, 8, 3))
+    build_event(r, "DELL", "FY27Q2", date(2026, 8, 3),
+                core=core_fields(a, run_date=previous_session(a).isoformat()))
+    st = r.status()
+    check("13c. a panel run_date that is not the anchor refuses",
+          nonzero(st) == {EL.J_PRE_EVENT_PANEL_DATE_MISMATCH: 1}, json.dumps(nonzero(st)))
+
+    # A nonblank but unparseable / naive snapshot instant refuses.
+    for bad in ("not-a-timestamp", "2026-08-31T13:00:00"):
+        r = Roots()
+        build_event(r, "DELL", "FY27Q2", date(2026, 8, 3),
+                    core=core_fields(a, pre_event_snapshot_asof_utc=bad))
+        st = r.status()
+        check(f"13d. snapshot instant {bad!r} refuses (presence is not validity)",
+              nonzero(st) == {EL.J_MALFORMED_SNAPSHOT_TIMESTAMP: 1}, json.dumps(nonzero(st)))
+
+    # An amendment that moves registered timing invalidates evidence prepared
+    # for the superseded anchor.
+    r = Roots()
+    row = register(r, "DELL", "FY27Q2", date(2026, 8, 3))
+    eid = row.event_id
+    pipeline.register_event(r.es, eid, {"ticker": "DELL"})
+    pipeline.capture_pre_event_and_option_benchmark_v0_2(
+        r.es, eid, core_fields(previous_session(date(2026, 8, 3))), dict(OPT))
+    write_stage_marker(r.markers, eid, STAGE_PRE_EVENT, r.es)
+    pipeline.capture_d1(r.es, eid, d1_fields())
+    write_stage_marker(r.markers, eid, STAGE_D1, r.es)
+    write_plan(r, eid)
+    r.reg.amend_event(amends_row_id=row.row_id,
+                      corrected_fields={"earnings_date": "2026-08-10",
+                                        "earnings_datetime_utc":
+                                            _release_dt(date(2026, 8, 10), "AMC").isoformat()},
+                      verified_at_utc=datetime(2026, 8, 5, tzinfo=timezone.utc),
+                      verified_by="synthetic-operator", notes="corrected date")
+    st = r.status()
+    got = nonzero(st)
+    check("13e. an amendment moving registered timing invalidates the superseded "
+          "PRE_EVENT evidence, before S-2",
+          len(got) == 1 and next(iter(got)) in (
+              EL.J_PRE_EVENT_ANCHOR_MISMATCH, EL.J_PRE_EVENT_PANEL_DATE_MISMATCH,
+              EL.J_OPERATIONS_PLAN_MISMATCH), json.dumps(got))
+
+    check("13f. the missing intra-session PRE_EVENT window is declared, not invented",
+          "SPECIFICATION GAP" in A.validate_pre_event_anchor.__doc__
+          and "intra-session" in A.validate_pre_event_anchor.__doc__)
 
     print(f"\n{CHECKS} checks run")
     if FAILURES:

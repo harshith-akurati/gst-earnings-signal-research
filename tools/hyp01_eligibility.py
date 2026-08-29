@@ -107,6 +107,18 @@ J_ORPHAN_AMENDMENT = "JOIN_REFUSED_ORPHAN_AMENDMENT"
 J_ILLEGAL_IDENTITY_CHANGE = "JOIN_REFUSED_ILLEGAL_IDENTITY_CHANGE"
 J_UNKNOWN_ROW_TYPE = "JOIN_REFUSED_UNKNOWN_ROW_TYPE"
 J_MISSING_REGISTRY_FIELD = "JOIN_REFUSED_MISSING_REGISTRY_FIELD"
+
+# Missing-root refusals. A canonical root that does not exist is NOT an empty
+# cohort -- it is an unusable input set. These fire BEFORE any constructor runs,
+# because HumanVerifiedEventRegistry.__init__ calls
+# self.root.mkdir(parents=True, exist_ok=True): merely constructing it against a
+# missing path CREATES that path and then reads zero rows, silently turning a
+# broken invocation into a clean "0 eligible events" report.
+J_MISSING_REGISTRY_ROOT = "JOIN_REFUSED_MISSING_REGISTRY_ROOT"
+J_MISSING_REGISTRY_FILE = "JOIN_REFUSED_MISSING_REGISTRY_FILE"
+J_MISSING_EVENT_STORE_ROOT = "JOIN_REFUSED_MISSING_EVENT_STORE_ROOT"
+J_MISSING_MARKER_ROOT = "JOIN_REFUSED_MISSING_MARKER_ROOT"
+J_MISSING_PLAN_ROOT = "JOIN_REFUSED_MISSING_OPERATIONS_PLAN_ROOT"
 J_REGISTRY_MUTATED_DURING_RUN = "JOIN_REFUSED_REGISTRY_MUTATED_DURING_RUN"
 J_MALFORMED_CANONICAL_JSON = "JOIN_REFUSED_MALFORMED_CANONICAL_JSON"
 
@@ -145,6 +157,14 @@ J_REGISTRY_TIMING_STALE = "JOIN_REFUSED_REGISTRY_TIMING_STALE"
 J_MALFORMED_CAPTURE_TIMESTAMP = "JOIN_REFUSED_MALFORMED_CAPTURE_TIMESTAMP"
 J_CAPTURE_BEFORE_PERMITTED_WINDOW = "JOIN_REFUSED_CAPTURE_BEFORE_PERMITTED_WINDOW"
 
+# PRE_EVENT binding refusals. The GST observation must be shown to belong to the
+# effective registration's mechanically derived pre-event anchor before S-2 or
+# S-3 may pass; otherwise a snapshot taken for a superseded anchor, or for
+# another session entirely, could satisfy the attention gates.
+J_PRE_EVENT_ANCHOR_MISMATCH = "JOIN_REFUSED_PRE_EVENT_ANCHOR_MISMATCH"
+J_PRE_EVENT_PANEL_DATE_MISMATCH = "JOIN_REFUSED_PRE_EVENT_PANEL_DATE_MISMATCH"
+J_MALFORMED_SNAPSHOT_TIMESTAMP = "JOIN_REFUSED_MALFORMED_SNAPSHOT_TIMESTAMP"
+
 JOIN_REFUSALS = (
     J_MISSING_EVENT_STORE_LOG, J_MISSING_PRE_EVENT_STATE, J_MISSING_D1_STATE,
     J_MISSING_D1_MARKER, J_MARKER_STATE_DISAGREEMENT, J_INVALID_STATE_CHRONOLOGY,
@@ -152,11 +172,15 @@ JOIN_REFUSALS = (
     J_OPERATIONS_PLAN_MISMATCH, J_OPERATIONS_PLAN_INTEGRITY,
     J_D1_SESSION_MISMATCH, J_REGISTRY_TIMING_STALE,
     J_MALFORMED_CAPTURE_TIMESTAMP, J_CAPTURE_BEFORE_PERMITTED_WINDOW,
+    J_PRE_EVENT_ANCHOR_MISMATCH, J_PRE_EVENT_PANEL_DATE_MISMATCH,
+    J_MALFORMED_SNAPSHOT_TIMESTAMP,
     J_DUPLICATE_EVENT, J_DUPLICATE_LEG, J_MISSING_GST_LEG, J_MISSING_D1_LEG,
     J_KEY_MISMATCH, J_UNEXPECTED_FIELD, J_NO_CAPTURE_TIME,
     J_NO_BASE_REGISTRATION, J_DUPLICATE_BASE_REGISTRATION, J_ORPHAN_AMENDMENT,
     J_ILLEGAL_IDENTITY_CHANGE, J_UNKNOWN_ROW_TYPE, J_MISSING_REGISTRY_FIELD,
     J_REGISTRY_MUTATED_DURING_RUN, J_MALFORMED_CANONICAL_JSON,
+    J_MISSING_REGISTRY_ROOT, J_MISSING_REGISTRY_FILE,
+    J_MISSING_EVENT_STORE_ROOT, J_MISSING_MARKER_ROOT, J_MISSING_PLAN_ROOT,
     J_MISSING_PRE_EVENT_MARKER, J_MISSING_MODULE_ELIGIBILITY,
     J_UNREADABLE_MODULE_ELIGIBILITY, J_MARKER_IDENTITY_MISMATCH,
 )
@@ -300,14 +324,25 @@ def load_registry_snapshot(registry_root: Path) -> RegistrySnapshot:
     would silently blend two states; a changed digest REFUSES instead.
     """
     root = Path(registry_root)
+    # REFUSE BEFORE CONSTRUCTING. HumanVerifiedEventRegistry.__init__ mkdirs its
+    # root, so constructing it first would create the very directory whose
+    # absence we are trying to detect, and an absent registry would then read as
+    # a valid zero-event cohort.
+    if not root.is_dir():
+        raise JoinRefusal(J_MISSING_REGISTRY_ROOT, "<registry>",
+                          f"registry root does not exist: {root}")
     path = root / "registry.jsonl"
-    before = _sha256_bytes(path.read_bytes()) if path.exists() else _sha256_text("")
+    if not path.is_file():
+        raise JoinRefusal(J_MISSING_REGISTRY_FILE, "<registry>",
+                          f"no registry.jsonl in {root}; a missing registry is not "
+                          f"an empty cohort")
+    before = _sha256_bytes(path.read_bytes())
     try:
         rows = load_effective_registrations(root)
     except json.JSONDecodeError as exc:
         raise JoinRefusal(J_MALFORMED_CANONICAL_JSON, "<registry>",
                           f"registry.jsonl is not valid JSONL: {exc}") from exc
-    after = _sha256_bytes(path.read_bytes()) if path.exists() else _sha256_text("")
+    after = _sha256_bytes(path.read_bytes())
     if before != after:
         raise JoinRefusal(J_REGISTRY_MUTATED_DURING_RUN, "<registry>",
                           "registry.jsonl changed while it was being read")

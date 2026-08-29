@@ -47,7 +47,7 @@ from gst_market_response import pipeline                                  # noqa
 from gst_market_response.event_record import EventStore                   # noqa: E402
 from gst_market_response.event_registry import HumanVerifiedEventRegistry  # noqa: E402
 from gst_market_response.exchange_calendar import (                       # noqa: E402
-    is_trading_day, next_session, session_close_utc,
+    is_trading_day, next_session, previous_session, session_close_utc,
 )
 from gst_market_response.operations_plan import (                         # noqa: E402
     build_operations_plan, finalize_plan,
@@ -126,7 +126,11 @@ class Roots:
                                          self.markers, self.plans)
 
 
-def core_fields(**over):
+def core_fields(anchor=None, **over):
+    """`anchor` is the event's mechanically derived pre-event anchor. The
+    snapshot and panel dates must equal it, or the adapter refuses -- that
+    binding is the point of the PRE_EVENT anchor check."""
+    a = (anchor.isoformat() if hasattr(anchor, "isoformat") else anchor) or "2026-08-03"
     f = {
         "gst_zscore": SENT["gst_zscore"],
         "wiki_zscore": SENT["wiki_zscore"],
@@ -137,7 +141,9 @@ def core_fields(**over):
         "source_status_gst": "ok", "source_status_wiki": "ok",
         "source_status_iv": "ok", "source_status_realized_vol": "ok",
         "source_status_price": "ok",
-        "pre_event_snapshot_asof_utc": "2026-08-03T13:00:00+00:00",
+        "pre_event_snapshot_asof_utc": f"{a}T13:00:00+00:00",
+        "run_date": a,
+        "price_asof_date": a,
         "source_csv_path": "synthetic/panel.csv",
         "source_csv_sha256": HASH_A,
         "source_marker_path": "synthetic/panel_marker.json",
@@ -204,6 +210,7 @@ def build_event(r: Roots, ticker: str, fy: str, earnings: date, *,
     """One event, written entirely through the production writers."""
     row = register(r, ticker, fy, earnings, session=session, status=status)
     eid = row.event_id
+    anchor = previous_session(earnings)
     pipeline.register_event(r.es, eid, {"ticker": ticker, "fiscal_period": fy})
     # The mainline order forbids D1 without a captured pre-event stage, so an
     # event missing PRE_EVENT necessarily has no D1 either.
@@ -211,7 +218,7 @@ def build_event(r: Roots, ticker: str, fy: str, earnings: date, *,
         with_d1 = False
     if with_pre:
         pipeline.capture_pre_event_and_option_benchmark_v0_2(
-            r.es, eid, core if core is not None else core_fields(),
+            r.es, eid, core if core is not None else core_fields(anchor),
             dict(OPTION_UNAVAILABLE))
         if with_pre_marker:
             write_stage_marker(r.markers, eid, STAGE_PRE_EVENT, r.es)
@@ -300,7 +307,8 @@ def main() -> int:
     eid = row.event_id
     pipeline.register_event(r.es, eid, {"ticker": "MSFT"})
     pipeline.capture_pre_event_and_option_benchmark_v0_2(
-        r.es, eid, core_fields(), dict(OPTION_UNAVAILABLE))
+        r.es, eid, core_fields(previous_session(date(2026, 8, 3))),
+        dict(OPTION_UNAVAILABLE))
     write_stage_marker(r.markers, eid, STAGE_PRE_EVENT, r.es)
     pipeline.capture_d1(r.es, eid, d1_fields())
     write_stage_marker(r.markers, eid, STAGE_D1, r.es)
@@ -444,7 +452,8 @@ def main() -> int:
     eid = row.event_id
     pipeline.register_event(r.es, eid, {"ticker": "DELL"})
     pipeline.capture_pre_event_and_option_benchmark_v0_2(
-        r.es, eid, core_fields(), dict(OPTION_UNAVAILABLE))
+        r.es, eid, core_fields(previous_session(date(2026, 8, 3))),
+        dict(OPTION_UNAVAILABLE))
     write_stage_marker(r.markers, eid, STAGE_PRE_EVENT, r.es)
     pipeline.capture_d1(r.es, eid, d1_fields())
     write_stage_marker(r.markers, eid, STAGE_D1, r.es)

@@ -63,7 +63,7 @@ from gst_market_response.event_record import (  # noqa: E402
     validate_transition,
 )
 from gst_market_response.exchange_calendar import (  # noqa: E402
-    compute_expected_next_full_trading_session_xnys,
+    compute_expected_next_full_trading_session_xnys, previous_session,
 )
 from gst_market_response.completeness import (  # noqa: E402
     LegacyRecordError, read_module_eligibility,
@@ -110,26 +110,56 @@ PRE_EVENT_OK_STATES = ("PRE_EVENT_CAPTURED", "PARTIAL")
 D1_OK_STATES = ("D1_COMPLETE", "PARTIAL")
 
 
+def require_canonical_roots(registry_root: Path, event_store_root: Path,
+                            marker_root: Path, plan_root: Path) -> None:
+    """Fail closed on any absent canonical root, BEFORE any constructor runs.
+
+    This must precede EventStore() and HumanVerifiedEventRegistry(): the latter
+    mkdirs its root, so constructing it against a missing path both creates a
+    directory during a nominally read-only invocation and converts a broken
+    input set into a clean "zero eligible events" answer.
+
+    A missing root is never an empty cohort.
+    """
+    for label, root, code in (
+        ("registry root", registry_root, EL.J_MISSING_REGISTRY_ROOT),
+        ("event-store root", event_store_root, EL.J_MISSING_EVENT_STORE_ROOT),
+        ("marker root", marker_root, EL.J_MISSING_MARKER_ROOT),
+        ("operations-plan root", plan_root, EL.J_MISSING_PLAN_ROOT),
+    ):
+        if not Path(root).is_dir():
+            raise JoinRefusal(code, "<roots>", f"{label} does not exist: {root}")
+    reg = Path(registry_root) / "registry.jsonl"
+    if not reg.is_file():
+        raise JoinRefusal(EL.J_MISSING_REGISTRY_FILE, "<roots>",
+                          f"no registry.jsonl in {registry_root}")
+
+
 def _sha256_file(p: Path) -> str:
     return hashlib.sha256(p.read_bytes()).hexdigest()
 
 
-def _parse_utc(raw, event_id: str, what: str) -> datetime:
+def _parse_utc(raw, event_id: str, what: str,
+               code: str = None) -> datetime:
     """Parse an ISO-8601 timestamp, failing closed.
+
+    `code` lets the caller emit a stage-specific refusal so a bad PRE_EVENT
+    snapshot instant is not reported as a D1 capture-time problem.
 
     A NONBLANK but unparseable, naive or nonsensical timestamp refuses. Merely
     checking presence is insufficient: an unparseable capture time cannot be
     compared against the permitted window at all.
     """
+    code = code or EL.J_MALFORMED_CAPTURE_TIMESTAMP
     if raw is None or str(raw).strip() == "":
-        raise JoinRefusal(EL.J_MALFORMED_CAPTURE_TIMESTAMP, event_id, f"{what} is blank")
+        raise JoinRefusal(code, event_id, f"{what} is blank")
     try:
         dt = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
     except (ValueError, TypeError) as exc:
-        raise JoinRefusal(EL.J_MALFORMED_CAPTURE_TIMESTAMP, event_id,
+        raise JoinRefusal(code, event_id,
                           f"{what}={raw!r} is not ISO-8601: {exc}") from exc
     if dt.tzinfo is None:
-        raise JoinRefusal(EL.J_MALFORMED_CAPTURE_TIMESTAMP, event_id,
+        raise JoinRefusal(code, event_id,
                           f"{what}={raw!r} has no timezone; refusing to assume one")
     return dt
 
@@ -295,6 +325,88 @@ def read_operations_plan(plan_root: Path, event_id: str) -> dict:
     return plan
 
 
+def _plan_describes_event(effective: dict, plan: dict) -> None:
+    """The operations plan must describe THIS event. Shared by the PRE_EVENT and
+    D1 validators so the two cannot drift."""
+    eid = effective["event_id"]
+    pe = plan.get("event") or {}
+    for field, want in (("event_id", eid),
+                        ("ticker", effective["ticker"]),
+                        ("earnings_date", effective["earnings_date"]),
+                        ("release_market_session", effective["release_market_session"])):
+        if str(pe.get(field)) != str(want):
+            raise JoinRefusal(EL.J_OPERATIONS_PLAN_MISMATCH, eid,
+                              f"plan {field}={pe.get(field)!r}, registration says {want!r}")
+
+
+def validate_pre_event_anchor(effective: dict, plan: dict, pre_state: dict) -> dict:
+    """Prove the PRE_EVENT evidence belongs to the registered pre-event anchor.
+
+    Runs BEFORE S-2 and S-3. Without it, a snapshot captured for a superseded
+    anchor -- or for an unrelated session -- could satisfy the attention gates,
+    because S-2 and S-3 read the persisted fields without asking which session
+    produced them.
+
+    Every comparison reuses a production function or an authoritative persisted
+    field. No session arithmetic is reimplemented, and no nearest-date or
+    historical fallback is accepted: every comparison is exact equality.
+
+    SPECIFICATION GAP -- deliberately not filled. No committed artifact states an
+    intra-session PRE_EVENT capture window (an earliest or latest instant within
+    the anchor session). Only the anchor SESSION is derivable, so this function
+    binds the snapshot to that session date and refuses to invent a
+    within-session bound. Recorded for human closure alongside the D1
+    upper-bound gap.
+    """
+    eid = effective["event_id"]
+    _plan_describes_event(effective, plan)
+
+    # -- the plan's anchor must BE the mechanically derived registered anchor --
+    # previous_session() is the production calendar function; operations_plan
+    # derives the anchor the same way (operations_plan.py:343-350).
+    derived = previous_session(date.fromisoformat(effective["earnings_date"]))
+    planned = ((plan.get("sessions") or {}).get("pre_event_anchor") or {}).get("session_date")
+    if planned != derived.isoformat():
+        raise JoinRefusal(
+            EL.J_PRE_EVENT_ANCHOR_MISMATCH, eid,
+            f"plan pre_event_anchor.session_date={planned!r} but the calendar derives "
+            f"{derived.isoformat()} from the effective earnings date; evidence prepared "
+            f"for a superseded anchor is not evidence for the current one")
+
+    f = pre_state.get("fields") or {}
+
+    # -- the snapshot instant must be parseable and timezone-aware ------------
+    asof = _parse_utc(f.get("pre_event_snapshot_asof_utc"), eid,
+                      "pre_event_snapshot_asof_utc",
+                      EL.J_MALFORMED_SNAPSHOT_TIMESTAMP)
+
+    # -- the panel/snapshot date must BE the anchor session -------------------
+    # run_date is the Phase 2 panel's own session date, persisted in
+    # stage_markers.PROVENANCE_KEYS. Exact equality only.
+    for field in ("run_date", "price_asof_date"):
+        got = f.get(field)
+        if got is None:
+            continue          # absent provenance is judged by S-5, not here
+        if str(got)[:10] != derived.isoformat():
+            raise JoinRefusal(
+                EL.J_PRE_EVENT_PANEL_DATE_MISMATCH, eid,
+                f"{field}={got!r} is not the derived pre-event anchor "
+                f"{derived.isoformat()}")
+
+    if asof.date().isoformat() != derived.isoformat():
+        raise JoinRefusal(
+            EL.J_PRE_EVENT_PANEL_DATE_MISMATCH, eid,
+            f"pre_event_snapshot_asof_utc falls on {asof.date().isoformat()}, "
+            f"not the derived anchor session {derived.isoformat()}")
+
+    return {"pre_event_anchor": derived.isoformat(),
+            "snapshot_asof_utc": asof.isoformat(),
+            "intra_session_window_enforced": False,
+            "intra_session_window_note":
+                "No committed artifact states an intra-session PRE_EVENT capture "
+                "window; none was invented. Specification gap recorded."}
+
+
 def validate_d1_response_window(effective: dict, plan: dict, d1_state: dict) -> dict:
     """Prove the D1 evidence belongs to the REGISTERED response window.
 
@@ -328,14 +440,7 @@ def validate_d1_response_window(effective: dict, plan: dict, d1_state: dict) -> 
             f"derives {expected.isoformat()} from the effective earnings date and session")
 
     # -- the plan must describe THIS event ----------------------------------
-    pe = plan.get("event") or {}
-    for field, want in (("event_id", eid),
-                        ("ticker", effective["ticker"]),
-                        ("earnings_date", effective["earnings_date"]),
-                        ("release_market_session", effective["release_market_session"])):
-        if str(pe.get(field)) != str(want):
-            raise JoinRefusal(EL.J_OPERATIONS_PLAN_MISMATCH, eid,
-                              f"plan {field}={pe.get(field)!r}, registration says {want!r}")
+    _plan_describes_event(effective, plan)
 
     # -- the plan's D1 session must BE the registered response session -------
     # This is what invalidates a capture prepared under superseded timing: an
@@ -471,6 +576,11 @@ def evaluate_event(effective: dict, store: EventStore, marker_root: Path,
                                   PRE_EVENT_OK_STATES, EL.J_MISSING_PRE_EVENT_STATE)
         pre_marker = read_marker(marker_root, eid, STAGE_PRE_EVENT, pre_state,
                                  EL.J_MISSING_PRE_EVENT_MARKER)
+        # The operations plan is opened here -- earlier than the D1 stage -- so
+        # the PRE_EVENT evidence can be bound to the registered anchor BEFORE
+        # S-2 and S-3 read it.
+        plan = read_operations_plan(plan_root, eid)
+        pre_timing = validate_pre_event_anchor(effective, plan, pre_state)
         eligibility = EL.module_eligibility_for(effective, EL.project_marker(pre_marker))
     except JoinRefusal as e:
         return (False, e.code, None)
@@ -490,7 +600,6 @@ def evaluate_event(effective: dict, store: EventStore, marker_root: Path,
                                  D1_OK_STATES, EL.J_MISSING_D1_STATE)
         d1_marker = read_marker(marker_root, eid, STAGE_D1, d1_state,
                                 EL.J_MISSING_D1_MARKER)
-        plan = read_operations_plan(plan_root, eid)
         timing = validate_d1_response_window(effective, plan, d1_state)
     except JoinRefusal as e:
         return (False, e.code, None)
@@ -560,6 +669,8 @@ def run_canonical(registry_root: Path, event_store_root: Path, marker_root: Path
     ladder and the tally, so a single invocation can never mix two registry
     states.
     """
+    require_canonical_roots(Path(registry_root), Path(event_store_root),
+                            Path(marker_root), Path(plan_root))
     snapshot = EL.load_registry_snapshot(Path(registry_root))
     ev = load_canonical_evidence(snapshot, event_store_root, marker_root, plan_root)
 
