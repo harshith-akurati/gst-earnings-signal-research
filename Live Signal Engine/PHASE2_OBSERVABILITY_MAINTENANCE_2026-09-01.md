@@ -160,61 +160,129 @@ disclosed, not claimed to be zero.
 (2026-09-01 02:15 CT) will run the **unchanged** live code.
 
 1. **The runner's SHA-256 pin must be updated in the same maintenance window as the merge.**
-   The task action pins the runner by content hash:
+   The task action pins the runner by content hash, and `check_code_integrity()` hashes the file
+   **as it exists on disk**.
 
    | | |
    |---|---|
    | Currently registered pin | `ff3cd77756846486b5c06c6d9cebab5c1ffcf34ad7da4cb91a85119bb2211802` |
-   | This branch's runner, as a fresh checkout lands it on disk | `c27ebf5d2e17c2a65ba1b59e30d4ad919ffb075e4b5ab199b2c548ea4f31e497` |
-   | This branch's runner, stored-blob (LF) form | `be5afc86aa85fe95fec40869d9f0cfbeb36ead1ed582c15df78ddd36ce28f06c` |
+   | **This branch's runner -- committed blob** | **`be5afc86aa85fe95fec40869d9f0cfbeb36ead1ed582c15df78ddd36ce28f06c`** |
+   | **This branch's runner -- fresh checkout, on disk** | **`be5afc86aa85fe95fec40869d9f0cfbeb36ead1ed582c15df78ddd36ce28f06c`** |
+   | *(pre-fix CRLF form, for reference only -- no longer produced)* | `c27ebf5d2e17c2a65ba1b59e30d4ad919ffb075e4b5ab199b2c548ea4f31e497` |
 
-   **The pin is line-ending dependent, and this is a pre-existing hazard that predates this
-   branch.** The repository runs with `core.autocrlf=true`, and `.gitattributes` disables
-   conversion only for the panel's own output files -- not for source. So the runner is stored
-   with LF and checked out with CRLF, and the two forms hash differently. The runner hashes the
-   file *as it exists on disk*, so the value to register is the on-disk form.
+   **The blob hash and the fresh-checkout on-disk hash are now identical.** That is the whole point
+   of the fix below, and it is what makes the pin reproducible.
 
-   The currently live worktree happens to hold the LF form on disk (`ff3cd777...`, equal to its
-   stored blob) because that file has sat there unmodified since it was authored and has never
-   been re-materialised by a checkout. A fresh checkout of the same commit would produce the CRLF
-   form and a different hash. Nothing is wrong with the live pin today, but it is luck rather than
-   design, and it will not survive a re-clone.
+   Merging **without** re-registering `--runner-sha256` makes the next unattended run refuse with
+   `EXIT_INTEGRITY(14)` before any network call. That is the pin working correctly -- but it is a
+   silent outage if nobody expects it.
 
-   **Therefore: after merging, recompute the hash of the runner file as it actually exists on disk
-   in the live worktree and register THAT value.** Do not copy a hash out of this document. On this
-   machine a merge that rewrites the file is expected to produce `c27ebf5d...`, but verify it rather
-   than assume it.
+### 6.1 Why the pin was not reproducible, and the exact rule that fixes it
 
-   Making the pin line-ending independent -- e.g. by adding a `-text` or `eol=lf` attribute for
-   `tools/*.py` -- is a real improvement and is deliberately **not** done here. It changes stored
-   bytes for files outside this fix's scope and is a separate reviewed decision.
+The repository runs with `core.autocrlf=true`, and `.gitattributes` disabled conversion only for
+the panel's own **output** files, not for source. The runner was therefore stored with LF and
+written to the working tree with CRLF, so its on-disk hash depended on how the file happened to
+land rather than on what was committed:
 
-   Merging this branch **without** re-registering the task with the new `--runner-sha256` makes the
-   next unattended run refuse with `EXIT_INTEGRITY(14)` before any network call. That is the pin
-   working correctly — but it is a silent outage if nobody expects it.
+| Form | SHA-256 |
+|---|---|
+| stored blob (LF) | `be5afc86aa85fe95fec40869d9f0cfbeb36ead1ed582c15df78ddd36ce28f06c` |
+| CRLF checkout (what a fresh clone produced) | `c27ebf5d2e17c2a65ba1b59e30d4ad919ffb075e4b5ab199b2c548ea4f31e497` |
 
-2. **`--approved-commit 73eb39435c9cb850399517a23dde1c0379b5b7da` does not change.** This branch
+The live worktree holds the LF form (`ff3cd777...`, equal to its own blob) **only because that file
+has sat there unmodified since it was authored and has never been re-materialised by a checkout.**
+This was verified empirically before the fix: a fresh `--local` clone of this branch at commit
+`970d2c37` under `core.autocrlf=true` produced `c27ebf5d...`, not the blob hash. A re-clone of the
+live branch would therefore have broken its own pin, with nothing but a line ending as the cause.
+
+**The rule, added to `.gitattributes` at the repository root, verbatim:**
+
+```gitattributes
+tools/run_phase2_daily_panel_unattended.py    text eol=lf
+```
+
+`text eol=lf` normalises the file to LF in the object store and writes it to the working tree with
+LF **regardless of `core.autocrlf` or `core.eol`**, so the on-disk SHA-256 equals the committed
+blob's SHA-256 on every machine and every clone.
+
+It is scoped to this exact path deliberately. **This is not a repository-wide line-ending change**,
+and no other file's stored bytes are affected. In particular the existing `-text` rules that keep
+the panel's captured outputs byte-exact are untouched.
+
+### 6.2 Fresh-worktree verification procedure
+
+Run this before re-registering the pin, or after any change to line-ending configuration. It is
+also automated as `test_phase2_runner_pin_reproducibility.py`.
+
+```bash
+# 1. What is committed?
+git cat-file blob HEAD:tools/run_phase2_daily_panel_unattended.py | sha256sum
+#    -> be5afc86aa85fe95fec40869d9f0cfbeb36ead1ed582c15df78ddd36ce28f06c
+
+# 2. Is the attribute actually in force?
+git check-attr text eol -- tools/run_phase2_daily_panel_unattended.py
+#    -> tools/run_phase2_daily_panel_unattended.py: text: set
+#    -> tools/run_phase2_daily_panel_unattended.py: eol: lf
+
+# 3. What does a FRESH checkout put on disk, under the hazardous setting?
+git -c core.autocrlf=true clone --quiet --local --no-hardlinks \
+    --branch <branch> --single-branch . /tmp/pincheck
+sha256sum /tmp/pincheck/tools/run_phase2_daily_panel_unattended.py
+#    -> be5afc86aa85fe95fec40869d9f0cfbeb36ead1ed582c15df78ddd36ce28f06c
+
+# 4. The two MUST match. If they do not, do not deploy.
+```
+
+**Proof that they match.** `test_phase2_runner_pin_reproducibility.py` asserts byte-for-byte
+equality between the committed blob and a fresh `core.autocrlf=true` checkout, and re-materialises
+the file under all nine combinations of `core.autocrlf` in {`true`, `false`, `input`} x `core.eol`
+in {unset, `crlf`, `lf`}, requiring a single hash across every one. It also carries a **control
+case**: a synthetic repository holding the identical bytes at the identical path but *without* the
+rule, which must produce a *different* hash under `core.autocrlf=true`. That control is what stops
+the guard from passing vacuously -- if the rule were deleted, the control would start matching and
+the test would fail.
+
+2. **Recompute and verify the live on-disk hash before updating the task pin.**
+   Do not copy a hash out of this document into the task registration. After merging, in the live
+   worktree:
+
+   ```bash
+   git cat-file blob HEAD:tools/run_phase2_daily_panel_unattended.py | sha256sum   # committed
+   sha256sum tools/run_phase2_daily_panel_unattended.py                            # on disk
+   ```
+
+   **The two must be equal, and that equal value is what gets registered.** If they differ, the
+   attribute is not in force in that worktree -- stop and investigate rather than registering the
+   on-disk value, because a pin that only matches one machine is the defect this fix exists to
+   remove.
+
+   Note that a merge will not necessarily re-materialise the file in an existing worktree. If the
+   live worktree still holds pre-merge bytes, force it with
+   `rm tools/run_phase2_daily_panel_unattended.py && git checkout -- tools/run_phase2_daily_panel_unattended.py`
+   and re-hash. Do this outside the 02:05-02:25 window and on a clean tree.
+
+3. **`--approved-commit 73eb39435c9cb850399517a23dde1c0379b5b7da` does not change.** This branch
    descends from `d49e9834`, which descends from the approved commit, so the lineage gate still
    passes. Verify with `git merge-base --is-ancestor` after the merge, before re-registering.
 
-3. **Deploy between cycles, never during one.** The permitted window is 02:05–02:25 America/Chicago.
+4. **Deploy between cycles, never during one.** The permitted window is 02:05–02:25 America/Chicago.
    Merge, re-pin and verify outside it.
 
-4. **`GST_Phase2_SafeDiagnostics.py` must be present in the repository root at run time.**
+5. **`GST_Phase2_SafeDiagnostics.py` must be present in the repository root at run time.**
    The runner now imports it, resolving the repository root from its own `__file__`. It is
    committed on this branch, so a normal merge satisfies this — but the runner file must never
    be deployed on its own without the module beside it, or it will fail at import before any
    gate runs.
 
-5. **Deploy on a clean live worktree.** The runner refuses on any dirty path, untracked ones
+6. **Deploy on a clean live worktree.** The runner refuses on any dirty path, untracked ones
    included.
 
-6. **First cycle after deployment is a verification cycle.** A clean 24/24 must still produce
+7. **First cycle after deployment is a verification cycle.** A clean 24/24 must still produce
    `COMPLETE`, one commit and a push, with **no** `panel diagnostics:` line in the runner log. A
    diagnostics line on a successful run would mean this change altered the success path, and should
    be treated as a regression.
 
-7. **Do not backfill.** 2026-08-29 and 2026-08-31 stay missing. This change improves the record of
+8. **Do not backfill.** 2026-08-29 and 2026-08-31 stay missing. This change improves the record of
    *future* failures; it does not recover past ones.
 
 ## 7. What this change does not fix
