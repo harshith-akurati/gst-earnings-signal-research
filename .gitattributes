@@ -26,3 +26,27 @@
 # correct and unambiguous.
 GST_Phase2_DailyPanel_TestRun_*.csv    -text
 GST_Phase2_DailyPanel_TestRun_*.json   -text
+
+# The unattended runner is PINNED BY CONTENT HASH in the scheduled task's
+# --runner-sha256 argument, and check_code_integrity() hashes the file AS IT
+# EXISTS ON DISK. With core.autocrlf=true and no attribute, git stores this
+# file with LF and checks it out with CRLF, so the on-disk hash depends on how
+# the file happened to land rather than on what is committed:
+#
+#   stored blob (LF)      be5afc86aa85fe95fec40869d9f0cfbeb36ead1ed582c15df78ddd36ce28f06c
+#   CRLF checkout         c27ebf5d2e17c2a65ba1b59e30d4ad919ffb075e4b5ab199b2c548ea4f31e497
+#
+# The currently live worktree holds the LF form only because that file has sat
+# there unmodified since it was authored and has never been re-materialised by
+# a checkout. A fresh clone would produce the CRLF form and the registered pin
+# would no longer match, refusing the next cycle with EXIT_INTEGRITY(14).
+#
+# "text eol=lf" makes the checkout deterministic: the file is normalised to LF
+# in the object store and written to the working tree with LF regardless of
+# core.autocrlf or core.eol, so the on-disk SHA-256 equals the committed blob's
+# SHA-256 on every machine and every clone. Verified by
+# test_phase2_runner_pin_reproducibility.py.
+#
+# Scoped to this exact path on purpose. This is NOT a repository-wide
+# line-ending change; no other file's stored bytes are affected.
+tools/run_phase2_daily_panel_unattended.py    text eol=lf

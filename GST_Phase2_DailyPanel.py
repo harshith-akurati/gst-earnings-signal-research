@@ -219,6 +219,7 @@ import GST_FixedWindow_PerEvent_Canonical as canonical
 from GST_Wikipedia_Pageviews_Pull import TICKER_TO_WIKI_ARTICLE, to_weekly
 import GST_Phase2_Wikipedia_Transport as wiki_transport
 from GST_MultiTicker_Forward_Log import get_option_snapshot, get_nearest_post_earnings_expiry
+from GST_Phase2_SafeDiagnostics import format_exception, sanitize_text
 
 
 # --- RUN LOG PERSISTENCE (2026-08-23, from the 8/23 PARTIAL incident) ---
@@ -439,7 +440,12 @@ def run_bounded(fn, timeout_s: float, *args, **kwargs):
         try:
             result_box["result"] = fn(*args, **kwargs)
         except Exception as e:
-            result_box["error"] = str(e)
+            # OBSERVABILITY (2026-09-01): was str(e), which is the EMPTY
+            # STRING for any exception built with no arguments. That is
+            # exactly how 2026-08-29 persisted iv_status='error' with a
+            # blank iv_error on all 24 tickers. format_exception() always
+            # keeps the class name, so a reason can never be blank again.
+            result_box["error"] = format_exception(e)
 
     t0 = time.time()
     thread = threading.Thread(target=_runner, daemon=True)
@@ -451,6 +457,41 @@ def run_bounded(fn, timeout_s: float, *args, **kwargs):
     if "error" in result_box:
         return None, False, elapsed, result_box["error"]
     return result_box.get("result"), False, elapsed, None
+
+
+SOURCE_LEGS = ("earnings", "price_history", "realized_vol", "iv", "gst", "wiki")
+
+
+def enforce_error_persistence(row: dict, fallback: str | None = None) -> dict:
+    """Post-condition for every row: a leg that did not succeed must carry a
+    non-empty, sanitized reason.
+
+    Introduced 2026-09-01 after 2026-08-29 persisted iv_status='error' with a
+    blank iv_error on all 24 tickers.
+
+    Deliberately narrow:
+      * a leg whose status is exactly "ok" is left COMPLETELY untouched --
+        no value, note, provenance or error field of a successful leg is read
+        or rewritten, so the success path is byte-identical;
+      * no measurement is imputed, substituted, defaulted or carried forward;
+      * only the "<source>_status" / "<source>_error" pair is ever written.
+    """
+    for src in SOURCE_LEGS:
+        status = row.get(f"{src}_status")
+        if status == "ok":
+            continue
+        if status in (None, ""):
+            # A leg that never reported at all is a failed leg, not a silent one.
+            status = "error"
+            row[f"{src}_status"] = status
+        detail = sanitize_text(row.get(f"{src}_error"))
+        if not detail:
+            detail = fallback or (
+                f"{src} leg reported status={status!r} but the provider call "
+                f"supplied no diagnostic detail")
+            detail = sanitize_text(detail)
+        row[f"{src}_error"] = detail
+    return row
 
 
 def _bounded_leg(fn, timeout_s: float, ticker: str, leg: str, *args, **kwargs):
@@ -746,7 +787,7 @@ def process_ticker(pt: TrendReq, ticker: str, run_ts: datetime,
         row["realized_vol_status"] = "ok"
     except Exception as e:
         row["realized_vol_status"] = "error"
-        row["realized_vol_error"] = str(e)
+        row["realized_vol_error"] = format_exception(e)
     row["realized_vol"] = realized_vol
     row["realized_vol_elapsed_s"] = round(time.time() - t0, 3)
     log(f"  [{ticker}] DONE  realized_vol  status={row['realized_vol_status']} "
@@ -810,7 +851,7 @@ def process_ticker(pt: TrendReq, ticker: str, run_ts: datetime,
             row["gst_error"] = f"gst_fetch_failed:{gst_status_dict['status']}"
     except Exception as e:
         row["gst_status"] = "error"
-        row["gst_error"] = str(e)
+        row["gst_error"] = format_exception(e)
     row["gst_elapsed_s"] = round(time.time() - t0, 3)
     log(f"  [{ticker}] DONE  gst  status={row['gst_status']} elapsed={row['gst_elapsed_s']:.2f}s "
         f"retries={row['gst_retry_count']} rate_limit_events={row['gst_rate_limit_events']} "
@@ -987,6 +1028,7 @@ def process_ticker(pt: TrendReq, ticker: str, run_ts: datetime,
                   row.get("realized_vol"), row.get("price"), row.get("volume")]
     row["all_six_fields_clean"] = all(v is not None for v in six_fields)
 
+    enforce_error_persistence(row)
     return row, wiki_pending
 
 
@@ -1357,8 +1399,21 @@ def main():
         "run continues, but the underlying call is not guaranteed to actually stop. "
         "This is disclosed, not claimed otherwise.\n")
 
-    pt = TrendReq(hl="en-US", tz=0, timeout=(30, 60), retries=0, backoff_factor=0.0,
-                  requests_args={"verify": False})
+    # OBSERVABILITY (2026-09-01): pytrends' TrendReq.__init__ calls
+    # GetGoogleCookie(), a live request, and that helper catches only
+    # requests.exceptions.ProxyError -- every other exception escapes the
+    # constructor. On 2026-08-31 one did, 15s into the run, and the panel
+    # died before writing a checkpoint or a marker, leaving no artifact
+    # naming the cause. Record it in the persistent run log, then re-raise
+    # UNCHANGED so the run still fails closed with no artifacts.
+    try:
+        pt = TrendReq(hl="en-US", tz=0, timeout=(30, 60), retries=0, backoff_factor=0.0,
+                      requests_args={"verify": False})
+    except Exception as e:
+        log(f"*** GOOGLE TRENDS CLIENT CONSTRUCTION FAILED -- {format_exception(e)} ***")
+        log("*** no ticker was attempted; the run fails closed with no panel, "
+            "no checkpoint and no completion marker (nothing is imputed or retried) ***")
+        raise
 
     # --- MEASURED WIKIPEDIA DATA WATERMARK (2026-08-01) -- resolved EXACTLY
     # ONCE, here, before any ticker is processed. Not a waiver or stale-data
@@ -1497,11 +1552,14 @@ def main():
         except Exception as e:
             # Isolation: an unexpected failure for one ticker must not destroy
             # already-collected rows for every other ticker.
-            log(f"  [{ticker}] UNHANDLED EXCEPTION -- {e}\n{traceback.format_exc()}")
+            log(f"  [{ticker}] UNHANDLED EXCEPTION -- {format_exception(e)}\n{traceback.format_exc()}")
             row = {c: None for c in COLUMN_ORDER}
             row.update({"run_date": RUN_DATE.isoformat(), "ticker": ticker,
                         "retrieval_timestamp_utc": datetime.now(timezone.utc).isoformat(),
                         "all_six_fields_clean": False, "ticker_total_s": round(time.time() - t0, 3)})
+            # No leg produced anything for this ticker; record the reason
+            # against every source rather than leaving six blank cells.
+            enforce_error_persistence(row, fallback=format_exception(e))
         elapsed = time.time() - t0
         rows.append(row)
         write_checkpoint(rows)
@@ -1696,6 +1754,7 @@ def main():
             six_fields = [row.get("gst_zscore"), row.get("wiki_zscore"), row.get("implied_volatility"),
                           row.get("realized_vol"), row.get("price"), row.get("volume")]
             row["all_six_fields_clean"] = all(v is not None for v in six_fields)
+            enforce_error_persistence(row)
             rows[idx] = row
         write_checkpoint(rows)
 

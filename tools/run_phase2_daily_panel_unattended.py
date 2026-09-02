@@ -49,6 +49,11 @@ import time
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from GST_Phase2_SafeDiagnostics import (                              # noqa: E402
+    MAX_LOG_BLOCK_LINES, format_stream_for_log,
+)
+
 EXIT_OK = 0
 EXIT_ENV = 3
 EXIT_LOCK = 4
@@ -127,6 +132,41 @@ def run(args: list[str], cwd: Path | None = None, timeout: int | None = None
             raise Refused(EXIT_ENV, f"prohibited git subcommand refused: {sub}")
     return subprocess.run(args, cwd=str(cwd) if cwd else None, capture_output=True,
                           text=True, timeout=timeout, shell=False)
+
+
+def log_panel_diagnostics(log, proc) -> None:
+    """Write a bounded, sanitized account of a panel failure to the runner log.
+
+    Added 2026-09-01. On 2026-08-31 the panel raised during Google Trends
+    client construction and exited 1 after 15s without writing a checkpoint or
+    a marker. This runner had already captured the child's stdout and stderr,
+    then discarded both on the refusal path -- so the traceback naming the
+    exception was never persisted anywhere and the cause was unrecoverable.
+
+    STDOUT IS NEVER ECHOED. The panel writes every measured value -- prices,
+    volatilities, z-scores, volumes -- to stdout through its own log(). Copying
+    stdout into the runner log would copy measurements out of the panel and
+    into an operational log, so only its length is reported. stderr carries the
+    traceback and is the diagnostic of record; it is redacted and bounded by
+    GST_Phase2_SafeDiagnostics before a byte of it is written.
+
+    This function only writes to the log. It raises nothing, returns nothing,
+    and changes no exit code.
+    """
+    out_len = len(proc.stdout or "")
+    err_len = len(proc.stderr or "")
+    log(f"panel diagnostics: exit={proc.returncode} stdout_chars={out_len} "
+        f"stderr_chars={err_len} (stdout is never echoed: it carries panel measurements)")
+
+    block = format_stream_for_log(proc.stderr)
+    if not block:
+        log("panel diagnostics: stderr was empty -- the panel produced no traceback")
+        return
+    log(f"panel diagnostics: sanitized stderr tail follows "
+        f"(<= {MAX_LOG_BLOCK_LINES} lines, secrets and user paths redacted)")
+    for line in block.split("\n"):
+        log(f"  | {line}")
+    log("panel diagnostics: end of sanitized stderr")
 
 
 def git(repo: Path, *args: str, timeout: int | None = 120) -> subprocess.CompletedProcess:
@@ -423,7 +463,13 @@ def main(argv=None) -> int:
             elapsed = int(time.time() - t0)
             log(f"panel exited code={p.returncode} elapsed={elapsed}s")
 
-            if not (repo / marker_rel).is_file() or not (repo / csv_rel).is_file():
+            outputs_missing = (not (repo / marker_rel).is_file()
+                               or not (repo / csv_rel).is_file())
+            if p.returncode != 0 or outputs_missing:
+                # Diagnostics only -- this neither changes the refusal
+                # condition below nor its exit code.
+                log_panel_diagnostics(log, p)
+            if outputs_missing:
                 record_attempt(run_date, "failure",
                                {"stage": "output", "panel_exit": p.returncode})
                 raise Refused(EXIT_MISSING,
