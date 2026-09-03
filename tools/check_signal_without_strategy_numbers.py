@@ -199,6 +199,22 @@ def C(desc, value, scale=1.0):
 
 
 CLAIMS = {
+    # ---- conference-precision renderings used in the AARE abstract ----------
+    # Same artifact pointers as the full-precision entries below; check_value()
+    # validates each at the precision actually displayed.
+    "2.08": C("overlay: primary.mean_paired_difference_pp (2 dp)",
+              dig(A["overlay"], "primary.mean_paired_difference_pp")),
+    "1.51": C("market: clustered_inference.primary_magnitude_abs_day_return.coef_pp (2 dp)",
+              dig(A["market"], "clustered_inference.primary_magnitude_abs_day_return.coef_pp")),
+    "0.013": C("market: clustered_inference.strategy_E_incremental_high_gst.coef_pp (3 dp)",
+               dig(A["market"], "clustered_inference.strategy_E_incremental_high_gst.coef_pp")),
+    "3.630": C("forecast: pooled_out_of_sample.C_baseline_plus_gst.mae_pp (3 dp)",
+               dig(A["magnitude"], "pooled_out_of_sample.C_baseline_plus_gst.mae_pp")),
+    "3.628": C("forecast: pooled_out_of_sample.B_baseline_no_gst.mae_pp (3 dp)",
+               dig(A["magnitude"], "pooled_out_of_sample.B_baseline_no_gst.mae_pp")),
+    "0.85": C("market: scorecard[3] (Strategy E) mean_net_pct (2 dp)",
+              dig(A["market"], "scorecard.3.mean_net_pct")),
+
     # ---- v1.1 Level-1 matched association (OVERLAY, authoritative) -----------
     "+2.0797": C("overlay: primary.mean_paired_difference_pp",
                  dig(A["overlay"], "primary.mean_paired_difference_pp")),
@@ -553,7 +569,7 @@ ALLOW = {
     "08": "ISO month component of a revision/overlay date",
     "22": "ISO day component of the 2026-08-22 correction overlay",
     "27": "ISO day component of the 2026-08-27 revision date",
-    "336": "abstract word count",
+    "233": "abstract word count",
     "5.8": "subsection number (v1.1 adds 5.1/5.2 and shifts the tail)",
     "4": "methods subsection prefix 4A / count of sensitivities",
     "13": "section number (Future work, added in v1.1)",

@@ -1,0 +1,5 @@
+# Committed PDFs are binary evidence. Without this, core.autocrlf=true makes git
+# classify text-heavy PDFs as text and rewrite their line endings on checkout, so a
+# fresh clone produces different bytes and a different SHA-256 than the file that was
+# committed. Verified 2026-09-03 against the AARE upload PDFs.
+*.pdf    -text

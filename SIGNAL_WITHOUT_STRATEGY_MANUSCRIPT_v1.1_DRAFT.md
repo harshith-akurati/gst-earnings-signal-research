@@ -11,50 +11,15 @@ no results and contributes no evidence here (§4.7).*
 
 ## 1. Abstract
 
-Public information variables can be economically associated with market reactions without supplying
-stable incremental forecasts or implementable trading returns. This paper synthesises a connected
-retrospective research program on United States equities that tested two such variables: Google
-search attention around earnings announcements, and a vendor-defined earnings surprise for ten large
-semiconductor firms. We separate three claims that are routinely conflated — association,
-incremental out-of-sample prediction, and tradability after timing and costs — and evaluate each
-against prespecified gates.
+Public information can be associated with market activity without supplying incremental forecasts or tradable returns. This study examines weekly Google search attention around 285 usable U.S. earnings announcements from 28 companies between March 2021 and December 2025. Before outcomes were observed, signal events were selected for Google Trends spikes at least five rolling standard deviations above the prior 12-week mean, excluding the event week from its own baseline; matched controls were not required to fall below that threshold.
 
-Search attention cleared the first and failed the other two. In a matched earnings-event comparison,
-high-attention events moved **+2.0797 percentage points** more in absolute terms than their matched
-controls (mean paired difference, **p = 0.00397**), a result stable across leave-one-ticker-out
-refits (**+1.8343 to +2.3772 pp** across 26 refits). This is an association between attention and
-*event activity*, established retrospectively on a matched population; it is not evidence of
-prediction.
+Among 73 signal events and 73 individually matched controls, signal events had absolute event-day returns 2.08 percentage points larger (p = .004). This retrospective association does not establish incremental predictive value. A separate ticker-clustered regression across all 285 usable events produced a 1.51-percentage-point coefficient (p = .066) with a confidence interval spanning zero. The first result is a matched difference among selected signal events; the second is a conditional association across the full usable sample.
 
-**A second, separate specification** — a ticker-clustered regression over the full usable event
-population rather than the matched pairs — gave **+1.509 pp** with a CR2 standard error of
-**0.766** on **16.3** Satterthwaite degrees of freedom, **p = 0.0662**, 95% CI
-**[−0.113, +3.131]**: suggestive, spanning zero, and not statistically supported at the 5% level.
-**These two estimates come from different specifications on different samples with different
-estimands; they are not contradictory versions of one number.** The matched comparison estimates an
-average treatment effect on the treated across 73 matched pairs; the clustered regression estimates
-a population coefficient. Both are Level-1 association measures, and neither is expected to
-reproduce the other.
+Incremental prediction tests were null. Against a price-and-calendar baseline, attention contributed 0.013 percentage points (p = .98). Out-of-sample magnitude error was 3.630 percentage points with attention versus 3.628 without (paired p = .98), and a directional model was less well calibrated than an intercept-only baseline. An attention-filtered event strategy returned 0.85% per event, but comparable post-earnings drift occurred without the filter, so the return cannot be attributed to attention.
 
-Every incremental test was null. Against a strong price-and-calendar baseline, attention's marginal
-contribution was **+0.0131 pp** with **p = 0.98332**. Out-of-sample magnitude error was **3.6299**
-with attention versus **3.6284** without (paired **p = 0.9827**). A logistic direction model was
-worse calibrated than an intercept-only baseline (Brier **0.2711** versus **0.2560**; AUC
-**0.4654**). A standalone event strategy returned a mean net **0.8543%** per event, but the same
-post-earnings drift was present without the attention filter, so that return is not an attention
-result.
+Association, prediction, and tradability must be evaluated as separate empirical claims.
 
-Earnings surprise behaved differently, showing a positive association with the initial price
-reaction (Spearman **+0.2169**, **p = 0.000236**, 283 out-of-sample events) that nonetheless improved
-forecast error in only five of eight years and four of nine firms, with a bootstrap interval
-including zero. We also report a leakage episode in which duplicated events and a mis-specified lag
-feature produced an apparent **63.6%** directional accuracy that fell to **47.9%** after correction.
-
-The contribution is a worked demonstration of where explanatory signal stops becoming predictive
-strategy. Search attention identifies unusually active earnings periods; it provides no reliable
-incremental forecasting or trading value.
-
-*(Abstract: 336 words.)*
+*(Abstract: 233 words.)*
 
 ---
 

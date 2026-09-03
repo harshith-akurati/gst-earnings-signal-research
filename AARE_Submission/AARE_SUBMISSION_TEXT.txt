@@ -5,13 +5,13 @@ TITLE
 Search Attention Without Strategy: Association, Prediction, and Tradability Around Earnings Announcements
 
 ABSTRACT
-Public information can be associated with market activity without supplying incremental forecasts or tradable returns. This study examines weekly Google search attention around 285 usable United States earnings announcements from 28 companies between March 2021 and December 2025. High attention is fixed before outcomes as a weekly Google Trends spike at least 5 rolling standard deviations above the prior 12 week mean, with the event week excluded from its own baseline.
+Public information can be associated with market activity without supplying incremental forecasts or tradable returns. This study examines weekly Google search attention around 285 usable U.S. earnings announcements from 28 companies between March 2021 and December 2025. Before outcomes were observed, signal events were selected for Google Trends spikes at least five rolling standard deviations above the prior 12-week mean, excluding the event week from its own baseline; matched controls were not required to fall below that threshold.
 
-In a matched comparison of 73 high attention earnings events against 73 individually matched control events, high attention events had absolute event day returns 2.08 percentage points larger, p = .004. This retrospective association does not establish incremental predictive value. A separate ticker clustered regression over the full 285 event population produced a coefficient of 1.51 percentage points, p = .066, with a confidence interval spanning zero. These two analyses use different samples and different estimands, so they are not competing estimates of one quantity.
+Among 73 signal events and 73 individually matched controls, signal events had absolute event-day returns 2.08 percentage points larger (p = .004). This retrospective association does not establish incremental predictive value. A separate ticker-clustered regression across all 285 usable events produced a 1.51-percentage-point coefficient (p = .066) with a confidence interval spanning zero. The first result is a matched difference among selected signal events; the second is a conditional association across the full usable sample.
 
-Every incremental test was null. Against a price and calendar baseline, the marginal contribution of attention was 0.01 percentage points, p = .98. Out of sample magnitude error was 3.63 percentage points with attention and 3.63 without, paired p = .98. A directional model was worse calibrated than an intercept only base rate. A standalone attention filtered event strategy returned 0.85 percent per event, but comparable post earnings drift occurred without the attention filter, so that return is not attributable to attention.
+Incremental prediction tests were null. Against a price-and-calendar baseline, attention contributed 0.013 percentage points (p = .98). Out-of-sample magnitude error was 3.630 percentage points with attention versus 3.628 without (paired p = .98), and a directional model was less well calibrated than an intercept-only baseline. An attention-filtered event strategy returned 0.85% per event, but comparable post-earnings drift occurred without the filter, so the return cannot be attributed to attention.
 
 Association, prediction, and tradability must be evaluated as separate empirical claims.
 
 ABSTRACT WORD COUNT
-249 words (limit 250, title excluded)
+233 words (limit 250, title excluded)

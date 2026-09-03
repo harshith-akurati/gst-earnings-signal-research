@@ -47,6 +47,28 @@ The analysis period of record is the artifact's `/sample/date_range`.
 | Query window | one independent Trends query per event over a fixed-length window ending at that event's own decision date (spike week + 7 days), never extending past it | same | module header |
 | Anchor tolerance | nearest pulled week must be within 6 days of the anchor | same | line 139 |
 
+### 2a. Is z >= 5 a selection rule or an observed property? (resolved 2026-09-03)
+
+**It is an explicit deterministic selection rule applied in producer code before matching.**
+This was traced through the producers rather than inferred from the observed minimum.
+
+| Step | Evidence |
+|---|---|
+| Threshold constant | `STRONG_Z = 5.0` — `GST_FixedWindow_PerEvent_Canonical.py` line 87 |
+| Rule applied | `qualifies = (z is not None) and (z >= STRONG_Z)` — same file, line 273 |
+| Persisted per event | column `qualifies_z5` in `Live Signal Engine/FixedWindow_PerEvent_Canonical.csv` |
+| Signal arm filtered on it | `strong = canonical[(canonical["qualifies_z5"] == True) & (canonical["pnl_pct"].notna())]` — `GST_MatchedControlGroup_CanonicalRecompute.py` line 266; that file also sets `Z_THRESHOLD = 5.0` at line 68 |
+| Clean partition, verified | 175 canonical events: `qualifies_z5 = True` n = 153, min z = 5.023, max 31.0985; `False` n = 22, min 1.3781, max 4.9568. **No True below 5.0 and no False at or above 5.0** |
+
+The abstract therefore says signal events **"were selected for"** Google Trends spikes at least five
+rolling standard deviations above the prior 12-week mean, which is the accurate formulation.
+
+**Controls were not subject to that rule.** Control candidate dates were excluded only when within
++/-10 days of a spike drawn from the archived list (`SPIKE_EXCLUSION_BUFFER_DAYS`,
+`GST_MatchedControlGroup_CanonicalRecompute.py` line 209); the control's own canonically recomputed
+z-score was never constrained. That is why 20 of the 132 controls carrying a stored z sit at
+z >= 5.0. The abstract discloses this explicitly.
+
 **Three thresholds exist in the repository and only one governs these analyses.** `z >= 2.0` is the
 base spike tier in `GST_Zscore_Spikes*.py` (`Z_THRESHOLD = 2.0`) used to build the general weekly
 spike files. `pooled_z_cut = 4.0` is a reported-alongside repo convention, explicitly described in
@@ -88,14 +110,14 @@ chronological expanding-window folds.
 | Clustered coefficient | 1.51 pp | `1.509` | `RETROSPECTIVE_MARKET_RESPONSE_RESULTS_v1.0.json` | `/clustered_inference/primary_magnitude_abs_day_return/coef_pp` | **CURRENT** |
 | Clustered p | p = .066 | `0.0662` | same | `.../p_value` | **CURRENT** |
 | Clustered 95% CI spans zero | "spanning zero" | `[-0.1133, 3.1313]` | same | `.../ci95_pp` | **CURRENT** |
-| Incremental coefficient | 0.01 pp | `0.0131` | same | `/clustered_inference/strategy_E_incremental_high_gst/coef_pp` | **CURRENT** |
+| Incremental coefficient | 0.013 pp | `0.0131` | same | `/clustered_inference/strategy_E_incremental_high_gst/coef_pp` | **CURRENT** |
 | Incremental p | p = .98 | `0.98332` | same | `.../p_value` | **CURRENT** |
-| OOS MAE with attention | 3.63 pp | `3.6299` | `RETROSPECTIVE_MAGNITUDE_FORECAST_RESULTS_v1.0.json` | `/pooled_out_of_sample/C_baseline_plus_gst/mae_pp` | **CURRENT** |
-| OOS MAE without attention | 3.63 pp | `3.6284` | same | `/pooled_out_of_sample/B_baseline_no_gst/mae_pp` | **CURRENT** |
+| OOS MAE with attention | 3.630 pp | `3.6299` | `RETROSPECTIVE_MAGNITUDE_FORECAST_RESULTS_v1.0.json` | `/pooled_out_of_sample/C_baseline_plus_gst/mae_pp` | **CURRENT** |
+| OOS MAE without attention | 3.628 pp | `3.6284` | same | `/pooled_out_of_sample/B_baseline_no_gst/mae_pp` | **CURRENT** |
 | Paired loss-difference p | p = .98 | `0.9827` | same | `/decisive_paired_loss_difference/clustered/p_value` | **CURRENT** |
 | Direction, model Brier | "worse calibrated" | `0.2711` | `RETROSPECTIVE_DIRECTION_SIGNAL_RESULTS_v1.0.json` | `/pooled_out_of_sample/logistic_l2/brier` | **CURRENT** |
 | Direction, base-rate Brier | "worse calibrated" | `0.256` | same | `/pooled_out_of_sample/intercept_only_prevalence/brier` | **CURRENT** |
-| Standalone strategy return | 0.85 percent per event | `0.8543` | `CORRECTION_OVERLAY_2026-08-22.md` line 268, `/scorecard` | `mean_net_pct` | **CURRENT** |
+| Standalone strategy return | 0.85% per event | `0.8543` | `CORRECTION_OVERLAY_2026-08-22.md` line 268, `/scorecard` | `mean_net_pct` | **CURRENT** |
 
 ## 5. Claims deliberately excluded from the AARE abstract
 

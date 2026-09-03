@@ -36,11 +36,9 @@ SCHOOL = "Marquette High School"
 CITY = "Chesterfield, Missouri, USA"
 TRACK = "Student Research Track"
 
-# No manuscript artifact states a correspondence address, so none is asserted.
-EMAIL_FIELD = ("Correspondence email: ______________________________________\n"
-               "(To be entered by hand before upload. No committed manuscript "
-               "artifact states a correspondence address, so none was supplied "
-               "automatically.)")
+# No committed manuscript artifact authorizes a correspondence address, and an
+# address in a script User-Agent header is not an authorship field. The
+# correspondence line is omitted entirely rather than guessed or left blank.
 
 MANUSCRIPT = ROOT / "SIGNAL_WITHOUT_STRATEGY_MANUSCRIPT_v1.1_DRAFT.md"
 ABSTRACT = HERE / "ABSTRACT.txt"
@@ -78,14 +76,10 @@ def build_title_page(dest: Path) -> int:
     h = ParagraphStyle("t", parent=ss["Title"], fontSize=17, leading=22, spaceAfter=26)
     n = ParagraphStyle("n", parent=ss["Normal"], fontSize=12, leading=17,
                        alignment=1, spaceAfter=7)
-    small = ParagraphStyle("s", parent=ss["Normal"], fontSize=9.5, leading=13,
-                           alignment=1, textColor="#444444")
     flow = [Paragraph(brp.esc(TITLE), h), Spacer(1, 12)]
     for line in (AUTHOR, SCHOOL, CITY):
         flow.append(Paragraph(brp.esc(line), n))
-    flow += [Spacer(1, 20), Paragraph(f"<b>{brp.esc(TRACK)}</b>", n), Spacer(1, 46)]
-    for line in EMAIL_FIELD.split("\n"):
-        flow.append(Paragraph(brp.esc(line), small))
+    flow += [Spacer(1, 20), Paragraph(f"<b>{brp.esc(TRACK)}</b>", n)]
     doc.build(flow)
     return len(PdfReader(str(dest)).pages)
 
