@@ -3,6 +3,22 @@
 **Date:** 2026-09-03 · **Branch:** `manuscript-v1.1-revision-20260827`
 **Package:** `AARE_Submission/` · **Not submitted.** No form was filled in and no file was uploaded.
 
+> ## BLOCKING: the two PDFs are stale as of 2026-09-04
+>
+> `ABSTRACT.txt`, `AARE_SUBMISSION_TEXT.txt`, the manuscript and the executive summary were
+> corrected on 2026-09-04 to the recomputed pooled statistics. **`AARE_TITLE_PAGE.pdf` and
+> `AARE_BLIND_MANUSCRIPT.pdf` were not rebuilt and still contain the superseded numbers**
+> (+1.509 pp at p = 0.0662 described as spanning zero; +0.0131 pp at p = 0.98332), which the
+> 2026-08-22 overlay marks `DO_NOT_CITE_PENDING_CORRECTION`.
+>
+> **Do not upload these PDFs.** Rebuild them with `build_aare_package.py` first, then refresh the
+> byte counts and SHA-256 values in the table below, which are also stale.
+>
+> They were not rebuilt here for two reasons: `pypdf` and `reportlab` are not installed in the
+> environment used for this correction, so the build cannot run; and commit `d5e94c5` deliberately
+> preserved the existing PDF bytes, so regenerating them is a decision for the author rather than a
+> side effect of a text correction.
+
 ## Upload files
 
 | File | Bytes | Pages | SHA-256 |
@@ -21,13 +37,13 @@ creation timestamp; the blind manuscript has its timestamps stripped.
 | # | Item | Result | Evidence |
 |---|---|---|---|
 | 1 | No placeholders | **PASS** | `count_words.py` scans for `TBD`, `TODO`, `XXX`, `PLACEHOLDER` and bracket characters; result `none` |
-| 2 | Abstract at most 240 words | **PASS** | **233 words**, title excluded |
+| 2 | Abstract at most 240 words | **PASS** | **239 words**, title excluded. NOTE: `count_words.py` enforces the looser 250-word cap; 240 is the binding requirement stated here and the abstract is held to it |
 | 3 | No em dashes | **PASS** | 0 em dashes, 0 en dashes |
 | 4 | Attention definition stated and verified | **PASS** | `z >= 5` confirmed an explicit deterministic selection rule (`STRONG_Z = 5.0`; `qualifies = z >= STRONG_Z`; signal arm filtered on `qualifies_z5 == True`), so the abstract says "were selected for". See `AARE_FACT_AUDIT.md` §2a |
-| 5 | Control disclosure retained | **PASS** | Abstract states matched controls were not required to fall below the threshold; 20 of 132 controls sit at z >= 5.0 |
+| 5 | Control disclosure retained | **PASS** | Abstract states matched controls were not required to fall below the threshold **and now states how many exceeded it**: six of the 73 surviving matched controls are themselves z >= 5.0 events (32 are z >= 2; largest control z = 14.60). Re-measured 2026-09-04, see `AARE_FACT_AUDIT.md` §2b |
 | 6 | Sample period and universe included | **PASS** | "285 usable U.S. earnings announcements from 28 companies between March 2021 and December 2025", from `/sample/date_range`, `/sample/events_usable`, `/sample/tickers` |
-| 7 | Sample-size language accurate | **PASS** | 73 signal events and 73 individually matched controls for the matched analysis; 285 usable events for the clustered regression. The two are explicitly described as a matched difference versus a conditional association, not competing estimates |
-| 8 | Correct hyphenation | **PASS** | `ticker-clustered`, `price-and-calendar`, `event-day`, `12-week`, `1.51-percentage-point`, `intercept-only`, `attention-filtered`, `post-earnings`, `Out-of-sample` |
+| 7 | Sample-size language accurate | **PASS** | 73 signal events and 73 individually matched controls for the matched analysis; **217** deduplicated events for the clustered regression (corrected 2026-09-04 from 285, which double-counted reused and cross-labelled control rows). 285 remains correct for the *usable population*, which is how the abstract's first paragraph uses it. The two analyses are explicitly described as a matched difference versus a conditional association, not competing estimates |
+| 8 | Correct hyphenation | **PASS** | `ticker-clustered`, `price-and-calendar`, `event-day`, `12-week`, `2.72-percentage-point`, `intercept-only`, `attention-filtered`, `post-earnings`, `Out-of-sample` |
 | 9 | No causal language | **PASS** | `check_signal_without_strategy_numbers.py`: "no prohibited causal, alpha, confirmatory or tradability language" |
 | 10 | No unsupported or superseded figures | **PASS** | 7.72%, 3.72%, d = 1.294, the permutation p, the superseded +1.4411 pp and sensitivity D are all absent from the abstract |
 | 11 | Form abstract identical to manuscript abstract | **PASS** | `ABSTRACT.txt` compared byte-for-byte against the manuscript §1 block and against the block inside `AARE_SUBMISSION_TEXT.txt`; both identical |
@@ -48,13 +64,16 @@ creation timestamp; the blind manuscript has its timestamps stripped.
 One token was changed from the text supplied in the task: **"attention contributed 0.01 percentage
 points" became "0.013 percentage points"**.
 
-`0.01` is already reserved in the numerical checker as the **USD 0.01 EPS match tolerance** used in
-manuscript §4.4, and the checker forbids one token from being both an allowlisted definition and a
-research claim. Rendering the incremental coefficient as `0.01` therefore made the manuscript's own
-audit fail. `0.013` resolves cleanly to
-`/clustered_inference/strategy_E_incremental_high_gst/coef_pp` = `0.0131` at the precision shown, is
-strictly more faithful to the stored value, and removes the collision. Nothing else in the supplied
-wording was altered.
+**Superseded note (2026-09-04).** The paragraph previously here explained why the incremental
+coefficient was rendered as `0.013` rather than `0.01`: `0.01` is reserved in the numerical checker
+as the USD 0.01 EPS match tolerance used in manuscript §4.4, and the checker forbids one token from
+being both an allowlisted definition and a research claim.
+
+That rationale no longer applies. The incremental coefficient was recomputed on the corrected
+217-event sample and is now **+0.7665 pp (p = 0.16525)**, rendered `0.77` in the abstract, which
+collides with nothing. The conclusion is unchanged -- the contribution is still not distinguishable
+from zero -- but it must now be argued from the interval rather than read off a coefficient that
+was visibly near zero. See `Correction_Overlays/2026-09-04_Pooled_Recompute/`.
 
 ## Other disclosures
 

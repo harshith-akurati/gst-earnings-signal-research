@@ -80,6 +80,28 @@ definition in force is `role == signal`, whose realized minimum is z = 5.023. Th
 **Controls are not a z-threshold complement.** 20 of the 132 controls with a stored z are
 themselves at z >= 5.0, and 36 at z >= 4.0. Controls were selected by matching, not by a cut.
 
+### 2b. How far the control arm is attenuated (measured 2026-09-04)
+
+The abstract states that matched controls were not required to fall below the signal threshold,
+and now states how many exceeded it. Re-measured directly by replaying the frozen E1/E2 matching
+in `tools/run_c5_control_matching_correction.py` over `retrospective_event_components.csv`:
+
+| Fact | Value | Basis | Status |
+|---|---|---|---|
+| Surviving matched pairs | 73 | E1 self-match exclusion then E2 unique-control award | **CURRENT** |
+| Controls at z >= 5 (STRONG tier) | **6** of 73 | control `zscore` in the surviving pairs | **CURRENT** |
+| Controls at z >= 2 | 32 of 73 | same | **CURRENT** |
+| Largest control z | 14.60 | same | **CURRENT** |
+| Median treated z, among the 73 survivors | 7.28 | treated `zscore` in the surviving pairs | **CURRENT** |
+| Median signal z, across all 152 signal events | 7.97 | `retrospective_event_components.csv`, role = signal | **CURRENT** |
+
+**Two different medians, and the distinction matters.** The largest control z (14.60) exceeds both,
+so the substantive point holds either way. But `GST_RETROSPECTIVE_CITATION_POLICY_v1.0_2026-09-04.md`
+introduces `7.97` inside a clause beginning "among the 73 survivors", which reads as though 7.97 were
+the survivors' median. It is not; it is the median over all 152 signal events. The survivors' median
+is **7.28**. The policy's figure is real but its attribution is imprecise, and any text derived from
+it must say which population it means.
+
 ## 3. Analysis-specific sample sizes
 
 These analyses **do not share one estimation sample**. No single headline N is accurate.
@@ -87,8 +109,8 @@ These analyses **do not share one estimation sample**. No single headline N is a
 | Analysis | N | Clusters | Estimand | Outcome | Source pointer | Status |
 |---|---|---|---|---|---|---|
 | Matched association (Level 1, primary) | **73 matched pairs** = 73 treated + 73 control = **146 event observations** | 26 tickers | ATT on \|day return\|, percentage points | absolute event-day return | `CORRECTED_RESULTS_v1.0.json` `/primary/n_pairs`, `/primary/estimand`, `/primary/inference/n_clusters`; `/sample/distinct_treated_identities` = 73, `/sample/distinct_control_identities` = 73 | **CURRENT** |
-| Ticker-clustered magnitude (primary) | **285 events** | **28** tickers | coefficient on the high-attention indicator, percentage points | absolute day return | `RETROSPECTIVE_MARKET_RESPONSE_RESULTS_v1.0.json` `/clustered_inference/primary_magnitude_abs_day_return/{n,n_clusters}` | **CURRENT** |
-| Incremental contribution (strategy E) | **285 events** | 28 tickers | marginal coefficient attributable to high attention over a price-and-calendar baseline | strategy E return | same, `/clustered_inference/strategy_E_incremental_high_gst/{n,n_clusters}` | **CURRENT** |
+| Ticker-clustered magnitude (primary) | **217 events** (152 signal + 65 control) | **28** tickers | coefficient on the high-attention indicator, percentage points | absolute day return | `Correction_Overlays/2026-09-04_Pooled_Recompute/GST_POOLED_RECOMPUTE_RESULTS_2026-09-04.json` `/results/primary_magnitude_abs_day_return/after_corrected/{n,n_clusters}`, `/sample_audit` | **CURRENT** (supersedes the 285-row fit) |
+| Incremental contribution (strategy E) | **217 events** | 28 tickers | marginal coefficient attributable to high attention over a price-and-calendar baseline | strategy E return | same, `/results/strategy_E_incremental_high_gst/after_corrected/{n,n_clusters}` | **CURRENT** (supersedes the 285-row fit) |
 | Out-of-sample magnitude forecast | **136 pooled out-of-sample events**; folds 2023, 2024, 2025 | 26 tickers (paired loss test) | pooled MAE and the paired loss difference | `abs(open(T)/close(T-1) - 1)` | `RETROSPECTIVE_MAGNITUDE_FORECAST_RESULTS_v1.0.json` `/pooled_out_of_sample/*/n`, `/folds`, `/decisive_paired_loss_difference/clustered/{n,n_clusters}`, `/outcome` | **CURRENT** |
 | Direction | **144 pooled out-of-sample events**; folds 2023, 2024, 2025 | not clustered | Brier score, AUC secondary | `sign(open(T)/close(T-1) - 1)` | `RETROSPECTIVE_DIRECTION_SIGNAL_RESULTS_v1.0.json` `/pooled_out_of_sample/*/n`, `/folds`, `/outcome` | **CURRENT** |
 | Trading, standalone | **152 treated trades** | not clustered | mean net return per event | net event return | `Correction_Overlays/2026-08-22_C5_Control_Matching/CORRECTION_OVERLAY_2026-08-22.md` line 268, "One-sample statistics on the 152 treated trades" | **CURRENT** |
@@ -101,17 +123,27 @@ chronological expanding-window folds.
 **Matched-analysis wording.** The matched analysis is **73 matched pairs**. Describing it only as
 "146 observations" would obscure the pairing that the estimand depends on.
 
+**The two arms now agree on the sample, and did not before.** The clustered regression previously
+ran on all **285 source rows**, while the forecasting build above deduplicated the same source to
+**217 unique event identities (68 duplicate rows removed)**. The 2026-09-04 recompute's three
+frozen membership rules land on **exactly that 217**: verified directly against
+`retrospective_event_components.csv`, the 285 rows contain 217 distinct `(ticker, earnings_date)`
+identities, of which 152 carry a signal label and 65 are control-only. The rules are therefore
+equivalent to *one row per event identity, signal label wins* -- the convention the forecasting arm
+already used. This is corroboration the frozen design did not aim at: the pooled regression was the
+only analysis in the paper not deduplicated to event identities.
+
 ## 4. Headline estimates used in the AARE abstract
 
 | Claim | Abstract precision | Full-precision stored | Source | Pointer | Status |
 |---|---|---|---|---|---|
 | Matched mean paired difference | 2.08 pp | `2.0797` | `CORRECTED_RESULTS_v1.0.json` | `/primary/mean_paired_difference_pp` | **CURRENT** |
 | Matched p | p = .004 | `0.00397` | same | `/primary/inference/p_value` | **CURRENT** |
-| Clustered coefficient | 1.51 pp | `1.509` | `RETROSPECTIVE_MARKET_RESPONSE_RESULTS_v1.0.json` | `/clustered_inference/primary_magnitude_abs_day_return/coef_pp` | **CURRENT** |
-| Clustered p | p = .066 | `0.0662` | same | `.../p_value` | **CURRENT** |
-| Clustered 95% CI spans zero | "spanning zero" | `[-0.1133, 3.1313]` | same | `.../ci95_pp` | **CURRENT** |
-| Incremental coefficient | 0.013 pp | `0.0131` | same | `/clustered_inference/strategy_E_incremental_high_gst/coef_pp` | **CURRENT** |
-| Incremental p | p = .98 | `0.98332` | same | `.../p_value` | **CURRENT** |
+| Clustered coefficient | 2.72 pp | `2.7199` | `Correction_Overlays/2026-09-04_Pooled_Recompute/GST_POOLED_RECOMPUTE_RESULTS_2026-09-04.json` | `/results/primary_magnitude_abs_day_return/after_corrected/coef_pp` | **CURRENT** (supersedes `1.509`) |
+| Clustered p | p = .0003 | `0.00031` | same | `.../p_value` | **CURRENT** (supersedes `0.0662`) |
+| Clustered 95% CI | excludes zero | `[1.4294, 4.0104]` | same | `.../ci95_pp` | **CURRENT** (supersedes `[-0.1133, 3.1313]`; the "spanning zero" wording is withdrawn) |
+| Incremental coefficient | 0.77 pp | `0.7665` | same | `/results/strategy_E_incremental_high_gst/after_corrected/coef_pp` | **CURRENT** (supersedes `0.0131`) |
+| Incremental p | p = .17 | `0.16525` | same | `.../p_value` | **CURRENT** (supersedes `0.98332`; still null, but by a much narrower margin) |
 | OOS MAE with attention | 3.630 pp | `3.6299` | `RETROSPECTIVE_MAGNITUDE_FORECAST_RESULTS_v1.0.json` | `/pooled_out_of_sample/C_baseline_plus_gst/mae_pp` | **CURRENT** |
 | OOS MAE without attention | 3.628 pp | `3.6284` | same | `/pooled_out_of_sample/B_baseline_no_gst/mae_pp` | **CURRENT** |
 | Paired loss-difference p | p = .98 | `0.9827` | same | `/decisive_paired_loss_difference/clustered/p_value` | **CURRENT** |

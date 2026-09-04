@@ -11,15 +11,15 @@ no results and contributes no evidence here (§4.7).*
 
 ## 1. Abstract
 
-Public information can be associated with market activity without supplying incremental forecasts or tradable returns. This study examines weekly Google search attention around 285 usable U.S. earnings announcements from 28 companies between March 2021 and December 2025. Before outcomes were observed, signal events were selected for Google Trends spikes at least five rolling standard deviations above the prior 12-week mean, excluding the event week from its own baseline; matched controls were not required to fall below that threshold.
+Public information can be associated with market activity without supplying incremental forecasts or tradable returns. This study examines weekly Google search attention around 285 usable U.S. earnings announcements from 28 companies between March 2021 and December 2025. Before outcomes were observed, signal events were selected for Google Trends spikes at least five rolling standard deviations above the prior 12-week mean, excluding the event week from its own baseline; matched controls were not required to fall below that threshold, and six of the 73 exceeded it.
 
-Among 73 signal events and 73 individually matched controls, signal events had absolute event-day returns 2.08 percentage points larger (p = .004). This retrospective association does not establish incremental predictive value. A separate ticker-clustered regression across all 285 usable events produced a 1.51-percentage-point coefficient (p = .066) with a confidence interval spanning zero. The first result is a matched difference among selected signal events; the second is a conditional association across the full usable sample.
+Among 73 signal events and 73 individually matched controls, signal events had absolute event-day returns 2.08 percentage points larger (p = .004). This retrospective association does not establish incremental predictive value. A separate ticker-clustered regression across 217 deduplicated events, one row per identity, produced a 2.72-percentage-point coefficient (p = .0003). The first result is a matched difference among selected signal events; the second is a conditional association across the pooled sample.
 
-Incremental prediction tests were null. Against a price-and-calendar baseline, attention contributed 0.013 percentage points (p = .98). Out-of-sample magnitude error was 3.630 percentage points with attention versus 3.628 without (paired p = .98), and a directional model was less well calibrated than an intercept-only baseline. An attention-filtered event strategy returned 0.85% per event, but comparable post-earnings drift occurred without the filter, so the return cannot be attributed to attention.
+Incremental prediction tests were null. Against a price-and-calendar baseline, attention contributed 0.77 percentage points, indistinguishable from zero (p = .17). Out-of-sample magnitude error was 3.630 percentage points with attention versus 3.628 without (paired p = .98), and a directional model was less well calibrated than an intercept-only baseline. An attention-filtered event strategy returned 0.85% per event, but comparable post-earnings drift occurred without the filter, so the return cannot be attributed to attention.
 
 Association, prediction, and tradability must be evaluated as separate empirical claims.
 
-*(Abstract: 233 words.)*
+*(Abstract: 239 words.)*
 
 ---
 
@@ -401,35 +401,98 @@ built on less than half the original pairs, and both facts belong together whene
 The primary inferential specification regresses the absolute day return on the high-attention
 indicator with ticker-clustered CR2 standard errors and Satterthwaite degrees of freedom:
 
-> **+1.509 percentage points**, CR2 SE **0.766**, **df 16.3**, **p = 0.0662**,
-> 95% CI **[−0.113, +3.131]**.
+> **+2.720 percentage points**, CR2 SE **0.616**, **df 18.5**, **p = 0.00031**,
+> 95% CI **[+1.429, +4.010]**.
 
-**The interval spans zero and the result is not statistically supported at the 5% level.** We
-describe it as *suggestive but unsupported*, and we do not describe it as significant, marginal,
-trending, or approaching significance.
+**These are corrected values, and they replace a previously reported estimate that was not
+statistically supported.** The v1.1 draft reported +1.509 pp, CR2 SE 0.766, df 16.3, p = 0.0662,
+95% CI [−0.113, +3.131], and described it as *suggestive but unsupported*. That fit pooled all 285
+source rows, which `CORRECTION_OVERLAY_2026-08-22.md` had already shown contain **20** identities
+carrying **both** the treated and the control label. Resolving the source to distinct event
+identities drops **68** control rows in total. The corrected
+fit is computed on the 217 distinct event identities under a design frozen before any corrected
+value existed (§5.2a). **The interval no longer spans zero.**
 
 Two other specifications in the same artifact reach significance. **Neither is promoted, and both
 are recorded here only as labelled sensitivities:**
 
 | Specification | Estimate | p | Status |
 |---|---|---|---|
-| **`primary_magnitude_abs_day_return`** | **+1.509 pp** | **0.0662** | **PRIMARY — designated in advance** |
-| `magnitude_abs_excess_vs_spy` (benchmark-adjusted) | +1.5388 pp | 0.03707 | sensitivity |
-| `repeated_control_sensitivity.deduplicated_cr2` (deduplicated) | — | 0.00193 | sensitivity |
+| **`primary_magnitude_abs_day_return`** | **+2.7199 pp** | **0.00031** | **PRIMARY — designated in advance, recomputed 2026-09-04** |
+| `magnitude_abs_excess_vs_spy` (benchmark-adjusted) | +2.6676 pp | 0.00036 | sensitivity, recomputed on the same corrected sample |
+| `repeated_control_sensitivity.deduplicated_cr2` (deduplicated, v1.1) | — | 0.00193 | superseded; see §5.2a |
 
-The primary gate was designated before these were compared. Reporting whichever variant clears 5% as
-the headline would be exactly the specification shopping this paper argues against, and the
-significance of a benchmark-adjusted or deduplicated variant does not transfer to the primary
-estimand. All three are Level-1 association measures; **none of them is incremental prediction**, and
-no combination of them changes the null results in Sections 5.4 and 5.5.
+The primary gate was designated before these were compared, and it is still the primary. What
+changed is the **sample it is fitted on**, not which specification we report. All of these remain
+Level-1 association measures; **none of them is incremental prediction**, and no combination of them
+changes the null results in Sections 5.4 and 5.5.
+
+### 5.2a Why the primary estimate changed, and why this is not specification shopping
+
+The v1.1 draft declined to promote the deduplicated variant, on the grounds that reporting whichever
+variant clears 5% would be exactly the specification shopping this paper argues against. That
+reasoning was right about promotion and wrong about the primary: it treated deduplication as an
+*alternative specification* when it is a **precondition for the sample being well defined at all**.
+
+Three facts, each verifiable independently of this correction:
+
+1. **The defect was established before the recompute, and by a different analysis.**
+   `CORRECTION_OVERLAY_2026-08-22.md` measured it on 2026-08-22 and marked all four pooled
+   clustered specifications `DO_NOT_CITE_PENDING_CORRECTION`. Nothing about the corrected values
+   was known then.
+2. **The corrected sample was fixed in writing before any corrected value existed.**
+   `GST_POOLED_RECOMPUTE_DESIGN_v1.0_FROZEN_2026-09-04.md` states the three membership rules, records
+   that no outcome value enters any of them, and commits in advance to reporting **all four**
+   affected specifications, including any that move against the argument. Two did, and §5.2b reports
+   them.
+3. **The corrected sample is not bespoke.** The rules reduce to *one row per `(ticker,
+   earnings_date)` identity, signal label wins*, and they land on exactly the **217** distinct
+   identities contained in the 285 source rows. That is the same 217 the out-of-sample forecasting
+   build in §5.5 has always used. Before this correction, the clustered regression was the only
+   analysis in the paper **not** deduplicated to event identities; the two arms now agree.
+
+**The direction of the change was predictable from the defect, and that is the point of having
+frozen the design.** **37** of the 133 control rows are events that meet the z >= 5.0 signal
+rule, carrying a control label for an event the same table also labels a signal. A
+control arm salted with high-attention events can only understate the contrast between high and low
+attention, so removing them could only widen the measured gap. The direction was determined by the
+nature of the error, not discovered in the output.
+
+**We state plainly that this correction flatters our own association claim**, taking the primary
+estimate from an interval spanning zero to p = 0.0003. A correction that helps the author deserves
+more scrutiny than one that hurts, which is why the membership rules, the run-once discipline, and
+the commitment to report all four specifications were all committed to a dated document first.
+
+The estimator itself is **unchanged and reused without modification** -- same CR2/BRL covariance,
+same ticker clustering, same coefficient-specific Satterthwaite degrees of freedom. Only the rows
+in the sample differ.
+
+### 5.2b The two specifications that moved against us
+
+Reported because the frozen design required reporting all four, not because they help.
+
+| Specification | v1.1 draft | corrected | direction |
+|---|---|---|---|
+| `strategy_E_incremental_high_gst` | +0.0131 pp, p = 0.98332 | +0.7665 pp, p = 0.16525 | **null weakened** -- the estimate is ~60x larger and the null must be argued, not displayed |
+| `strategy_B_incremental_high_gst` | −0.3439 pp, p = 0.46577 | −0.1837 pp, p = 0.73137 | what little signal it had is gone |
+
+Neither reaches significance, so the paper's Level-2 conclusion is unchanged. But the *rhetorical*
+force of "0.013 percentage points" is gone, and §5.3 no longer relies on it.
 
 ### 5.3 Standalone profitability is not attention alpha
 
 An event strategy selecting earnings events using an attention filter produced a mean net return of
 **0.8543%** per event. Taken alone this looks like a working signal. The decisive test is
 incremental: with a baseline already containing price and calendar information, the marginal
-contribution attributable to attention was **+0.0131 percentage points** with **p = 0.98332**. The
-point estimate is near zero and the p-value is close to 1.
+contribution attributable to attention was **+0.7665 percentage points** with **p = 0.16525**,
+95% CI **[−0.346, +1.879]**. **The interval contains zero and the contribution is not
+distinguishable from nothing.**
+
+This is a corrected value and it is weaker than the one the v1.1 draft reported. That draft gave
+**+0.0131 pp, p = 0.98332**, computed on the same defective 285-row pool, and leaned on the point
+estimate being visibly near zero. On the corrected sample the estimate is roughly sixty times
+larger and the null must now be **argued from the interval rather than read off the coefficient**.
+It remains a null; it is no longer a self-evident one.
 
 **The same post-earnings drift was present without the attention filter.** The strategy captured the
 well-documented tendency of prices to drift after earnings announcements [Ball and Brown 1968; Foster
@@ -607,7 +670,7 @@ manufacture a pass would invert the purpose of the gate, and no such combination
 
 | Construct | Target | Sample | Association | Incremental prediction | Trading | Principal limitation | Final interpretation |
 |---|---|---|---|---|---|---|---|
-| Search attention | Absolute earnings move | Retrospective US equities | Present in places | **No** — +0.0131 pp, p = 0.98332 | Standalone 0.8543% net, not incremental | Drift confound | Event selector, not alpha |
+| Search attention | Absolute earnings move | Retrospective US equities | Present in places | **No** — +0.7665 pp, p = 0.16525 | Standalone 0.8543% net, not incremental | Drift confound | Event selector, not alpha |
 | Search attention | Move direction | 217 unique events | None detected | **No** — Brier 0.2711 vs 0.2560; AUC 0.4654 | −0.7027% net | Leakage before correction | No directional skill |
 | Search attention | Move magnitude | Retrospective panel | Weak | **No** — MAE 3.6299 vs 3.6284, p = 0.9827 | Not run | Noisy normalisation | No incremental value |
 | Search attention | Weekly volatility | Weekly panel | Weak | **No** — −0.0309%, interval spans zero | Not run | Small effect size | No incremental value |
@@ -624,9 +687,10 @@ No new score, ranking, or aggregate is computed from this table.
 ### 10.0 Why a detectable association coexists with null incremental prediction
 
 The central result of this paper looks paradoxical only until the three levels are held apart. A
-matched association of +2.0797 pp at p = 0.00397 is a real, statistically detectable difference. An
-incremental contribution of +0.0131 pp at p = 0.98332 is an unambiguous null. Both come from the
-same variable on overlapping data. Four reasons they are consistent:
+matched association of +2.0797 pp at p = 0.00397 is a real, statistically detectable difference, as
+is the corrected pooled association of +2.7199 pp at p = 0.00031. An incremental contribution of
++0.7665 pp at p = 0.16525, with an interval containing zero, is a null. Both come from the same
+variable on overlapping data. Four reasons they are consistent:
 
 **1. The comparison groups differ.** The association contrasts high-attention earnings events with
 *matched earnings events*. The incremental test contrasts a baseline *already containing price and
@@ -740,9 +804,9 @@ events rather than ordinary weeks; *association*, because the incremental tests 
 
 The evidence separates cleanly by level. At Level 1, high-attention events moved +2.0797 pp more than
 matched controls (p = 0.00397), stable from +1.8343 to +2.3772 pp across 26 leave-one-ticker-out
-refits. At the primary inferential specification the estimate was +1.509 pp with a 95% interval of
-[−0.113, +3.131] that spans zero (p = 0.0662) — suggestive, not supported at 5%. At Level 2 nothing
-survived: incremental contribution +0.0131 pp (p = 0.98332); out-of-sample magnitude MAE 3.6299 with
+refits. At the primary inferential specification, corrected to the 217 distinct event identities,
+the estimate was +2.7199 pp with a 95% interval of [+1.429, +4.010] (p = 0.00031). At Level 2 nothing
+survived: incremental contribution +0.7665 pp (p = 0.16525); out-of-sample magnitude MAE 3.6299 with
 attention versus 3.6284 without (p = 0.9827); a direction model worse calibrated than assuming the
 base rate. At Level 3 the standalone 0.8543% per event was post-earnings drift that existed without
 the attention filter.
@@ -759,8 +823,9 @@ value in every specification we ran.
 
 Method changed conclusions materially. Correcting duplicated events and one mis-specified lag
 feature turned an apparent 63.6% directional accuracy into 47.9%. Requiring a strong baseline turned
-a 0.8543% standalone strategy into an incremental contribution of 0.0131 percentage points at
-p = 0.98332. Requiring temporal replication turned a suggestive 2023–2025 result into a
+a 0.8543% standalone strategy into an incremental contribution of 0.7665 percentage points at
+p = 0.16525, an interval containing zero. Requiring temporal replication turned a suggestive
+2023–2025 result into a
 better-identified but still unstable 2010–2017 one.
 
 **None of the tested strategies qualifies as investable, and none is offered as such.** The

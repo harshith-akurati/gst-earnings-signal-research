@@ -55,8 +55,10 @@ earnings surprise showed a real relationship with the first-session price reacti
 ## What failed, and why
 
 **The attention strategy was not attention alpha.** Against a baseline already containing price and
-calendar information, the marginal contribution of search attention was **+0.0131 percentage
-points** at **p = 0.98332** — indistinguishable from zero. The profits came from the earnings event
+calendar information, the marginal contribution of search attention was **+0.7665 percentage
+points** at **p = 0.16525**, an interval containing zero. (Corrected 2026-09-04; the earlier
+**+0.0131 pp** at **p = 0.98332** was fitted on a pool containing duplicated and cross-labelled
+rows.) The profits came from the earnings event
 itself, a long-documented effect, not from who was searching. Across direction, magnitude, weekly
 volatility and the restaurant pilot, attention never beat a strong baseline; several times it made
 forecasts slightly worse.

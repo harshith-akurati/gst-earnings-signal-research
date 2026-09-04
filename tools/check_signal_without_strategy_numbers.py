@@ -137,6 +137,12 @@ A = {
     # 2026-08-27 (v1.1): corrected matched-control overlay is authoritative for
     # the Level-1 association and SUPERSEDES Q1_abs_move_high_vs_control.
     "overlay": jload(OVERLAY_PATH),
+    # 2026-09-04: the pooled clustered specifications recomputed on the 217
+    # distinct event identities. SUPERSEDES the four AFFECTED entries under
+    # A["market"]["clustered_inference"], which were fitted on all 285 source
+    # rows and carry DO_NOT_CITE_PENDING_CORRECTION in the 2026-08-22 overlay.
+    "recompute": jload("Correction_Overlays/2026-09-04_Pooled_Recompute/"
+                       "GST_POOLED_RECOMPUTE_RESULTS_2026-09-04.json"),
 }
 
 
@@ -196,6 +202,20 @@ def from_narrative(pattern, label):
 # scale converts the artifact's units into the units displayed (e.g. 100 for percent).
 def C(desc, value, scale=1.0):
     return (desc, float(value) * scale)
+
+
+def agree(label, *values):
+    """Assert independent artifacts report the same number, and return it.
+
+    Used where one displayed token is corroborated by more than one artifact.
+    Previously such cases were written as duplicate dict keys, where the later
+    entry silently replaced the earlier one and its source went unchecked.
+    """
+    first = float(values[0])
+    for v in values[1:]:
+        if abs(float(v) - first) > 1e-9:
+            raise SystemExit(f"artifacts disagree on {label}: {values!r}")
+    return first
 
 
 CLAIMS = {
@@ -311,12 +331,76 @@ CLAIMS = {
               round(dig(A["overlay"], "primary.inference.satterthwaite_df"), 1)),
     "15.1": C("overlay: sensitivity.a.satterthwaite_df (1dp)",
               round(dig(A["overlay"], "sensitivity.a_reuse_retained_self_match_excluded.satterthwaite_df"), 1)),
+    # NOTE: "28" was previously declared twice in this dict. The second
+    # declaration silently won and the refit-count source was never checked.
+    # Both sources are asserted here.
     "28": C(DESIGN_PATH + ": stated leave-one-ticker-out refit count "
-            "(differs from the realised 26; v1.1 reports both)", DESIGN_REFITS),
-    # ---- v1.1 primary clustered magnitude model (PRIMARY gate) ---------------
-    "+1.509": C("market: primary_magnitude_abs_day_return.coef_pp",
+            "(differs from the realised 26; v1.1 reports both); also "
+            "pr35: bootstrap block_days",
+            agree("28", DESIGN_REFITS,
+                  dig(A["pr35"], "stage1_replication.bootstrap_mae_diff.block_days"))),
+    # ---- primary clustered magnitude model (PRIMARY gate), corrected --------
+    # CURRENT values, fitted on the 217 distinct event identities.
+    "+2.720": C("recompute: primary.after_corrected.coef_pp (3dp)",
+                round(dig(A["recompute"], "results.primary_magnitude_abs_day_return."
+                          "after_corrected.coef_pp"), 3)),
+    "37": C("recompute: sample_audit.dropped_cross_arm_overlap_rows",
+            dig(A["recompute"], "sample_audit.dropped_cross_arm_overlap_rows")),
+    # signed and abstract-precision forms of the corrected values
+    "+2.7199": C("recompute: primary.after_corrected.coef_pp",
+                 dig(A["recompute"], "results.primary_magnitude_abs_day_return."
+                     "after_corrected.coef_pp")),
+    "2.72": C("recompute: primary.after_corrected.coef_pp (abstract precision)",
+              round(dig(A["recompute"], "results.primary_magnitude_abs_day_return."
+                        "after_corrected.coef_pp"), 2)),
+    "0.0003": C("recompute: primary.after_corrected.p_value (abstract precision)",
+                round(dig(A["recompute"], "results.primary_magnitude_abs_day_return."
+                          "after_corrected.p_value"), 4)),
+    "+1.429": C("recompute: primary.after_corrected.ci95_pp[0] (3dp)",
+                round(dig(A["recompute"], "results.primary_magnitude_abs_day_return."
+                          "after_corrected.ci95_pp.0"), 3)),
+    "+4.010": C("recompute: primary.after_corrected.ci95_pp[1] (3dp)",
+                round(dig(A["recompute"], "results.primary_magnitude_abs_day_return."
+                          "after_corrected.ci95_pp.1"), 3)),
+    "+2.6676": C("recompute: magnitude_abs_excess_vs_spy.after_corrected.coef_pp",
+                 dig(A["recompute"], "results.magnitude_abs_excess_vs_spy."
+                     "after_corrected.coef_pp")),
+    "0.77": C("recompute: strategy_E.after_corrected.coef_pp (abstract precision)",
+              round(dig(A["recompute"], "results.strategy_E_incremental_high_gst."
+                        "after_corrected.coef_pp"), 2)),
+    "+1.879": C("recompute: strategy_E.after_corrected.ci95_pp[1] (3dp)",
+                round(dig(A["recompute"], "results.strategy_E_incremental_high_gst."
+                          "after_corrected.ci95_pp.1"), 3)),
+    "2.7199": C("recompute: primary.after_corrected.coef_pp",
+                dig(A["recompute"], "results.primary_magnitude_abs_day_return."
+                    "after_corrected.coef_pp")),
+    "0.00031": C("recompute: primary.after_corrected.p_value",
+                 dig(A["recompute"], "results.primary_magnitude_abs_day_return."
+                     "after_corrected.p_value")),
+    "0.616": C("recompute: primary.after_corrected.cr2_se_pp (3dp)",
+               round(dig(A["recompute"], "results.primary_magnitude_abs_day_return."
+                         "after_corrected.cr2_se_pp"), 3)),
+    "18.5": C("recompute: primary.after_corrected.satterthwaite_df (1dp)",
+              round(dig(A["recompute"], "results.primary_magnitude_abs_day_return."
+                        "after_corrected.satterthwaite_df"), 1)),
+    "1.429": C("recompute: primary.after_corrected.ci95_pp[0] (3dp)",
+               round(dig(A["recompute"], "results.primary_magnitude_abs_day_return."
+                         "after_corrected.ci95_pp.0"), 3)),
+    "4.010": C("recompute: primary.after_corrected.ci95_pp[1] (3dp)",
+               round(dig(A["recompute"], "results.primary_magnitude_abs_day_return."
+                         "after_corrected.ci95_pp.1"), 3)),
+    "2.6676": C("recompute: magnitude_abs_excess_vs_spy.after_corrected.coef_pp",
+                dig(A["recompute"], "results.magnitude_abs_excess_vs_spy."
+                    "after_corrected.coef_pp")),
+    "0.00036": C("recompute: magnitude_abs_excess_vs_spy.after_corrected.p_value",
+                 dig(A["recompute"], "results.magnitude_abs_excess_vs_spy."
+                     "after_corrected.p_value")),
+    # ---- v1.1 values, SUPERSEDED but still cited in the correction narrative -
+    # Retained so the manuscript's explicit before/after comparison resolves
+    # against the artifact it actually came from. Never cite these as current.
+    "+1.509": C("market (SUPERSEDED): primary_magnitude_abs_day_return.coef_pp",
                 dig(A["market"], "clustered_inference.primary_magnitude_abs_day_return.coef_pp")),
-    "1.509": C("market: primary_magnitude_abs_day_return.coef_pp",
+    "1.509": C("market (SUPERSEDED): primary_magnitude_abs_day_return.coef_pp",
                dig(A["market"], "clustered_inference.primary_magnitude_abs_day_return.coef_pp")),
     "0.766": C("market: primary.cr2_se_pp (3dp)",
                round(dig(A["market"], "clustered_inference.primary_magnitude_abs_day_return.cr2_se_pp"), 3)),
@@ -371,11 +455,40 @@ CLAIMS = {
     # ---- search attention: standalone vs incremental -------------------------
     "0.8543": C("market: scorecard[3] (Strategy E) mean_net_pct",
                 dig(A["market"], "scorecard.3.mean_net_pct")),
-    "+0.0131": C("market: clustered_inference.strategy_E_incremental_high_gst.coef_pp",
+    # ---- corrected incremental contribution (CURRENT) -----------------------
+    "+0.7665": C("recompute: strategy_E_incremental_high_gst.after_corrected.coef_pp",
+                 dig(A["recompute"], "results.strategy_E_incremental_high_gst."
+                     "after_corrected.coef_pp")),
+    "0.7665": C("recompute: strategy_E_incremental_high_gst.after_corrected.coef_pp",
+                dig(A["recompute"], "results.strategy_E_incremental_high_gst."
+                    "after_corrected.coef_pp")),
+    "0.16525": C("recompute: strategy_E_incremental_high_gst.after_corrected.p_value",
+                 dig(A["recompute"], "results.strategy_E_incremental_high_gst."
+                     "after_corrected.p_value")),
+    "1.879": C("recompute: strategy_E.after_corrected.ci95_pp[1] (3dp)",
+               round(dig(A["recompute"], "results.strategy_E_incremental_high_gst."
+                         "after_corrected.ci95_pp.1"), 3)),
+    "0.346": C("recompute: |strategy_E.after_corrected.ci95_pp[0]| (3dp)",
+               abs(round(dig(A["recompute"], "results.strategy_E_incremental_high_gst."
+                             "after_corrected.ci95_pp.0"), 3))),
+    "0.1837": C("recompute: |strategy_B_incremental_high_gst.after_corrected.coef_pp|",
+                abs(dig(A["recompute"], "results.strategy_B_incremental_high_gst."
+                        "after_corrected.coef_pp"))),
+    "0.73137": C("recompute: strategy_B_incremental_high_gst.after_corrected.p_value",
+                 dig(A["recompute"], "results.strategy_B_incremental_high_gst."
+                     "after_corrected.p_value")),
+    "0.3439": C("market (SUPERSEDED): |strategy_B_incremental_high_gst.coef_pp|",
+                abs(dig(A["market"], "clustered_inference."
+                        "strategy_B_incremental_high_gst.coef_pp"))),
+    "0.46577": C("market (SUPERSEDED): strategy_B_incremental_high_gst.p_value",
+                 dig(A["market"], "clustered_inference."
+                     "strategy_B_incremental_high_gst.p_value")),
+    # ---- v1.1 values, SUPERSEDED but cited in the before/after comparison ----
+    "+0.0131": C("market (SUPERSEDED): strategy_E_incremental_high_gst.coef_pp",
                  dig(A["market"], "clustered_inference.strategy_E_incremental_high_gst.coef_pp")),
-    "0.0131": C("market: clustered_inference.strategy_E_incremental_high_gst.coef_pp",
+    "0.0131": C("market (SUPERSEDED): strategy_E_incremental_high_gst.coef_pp",
                 dig(A["market"], "clustered_inference.strategy_E_incremental_high_gst.coef_pp")),
-    "0.98332": C("market: clustered_inference.strategy_E_incremental_high_gst.p_value",
+    "0.98332": C("market (SUPERSEDED): strategy_E_incremental_high_gst.p_value",
                  dig(A["market"], "clustered_inference.strategy_E_incremental_high_gst.p_value")),
     # ---- direction model ------------------------------------------------------
     "0.2560": C("direction: pooled intercept_only_prevalence.brier",
@@ -394,8 +507,15 @@ CLAIMS = {
               dig(A["direction"], "pooled_out_of_sample.always_positive.accuracy"), 100),
     "285": C("direction: sample.rows_in_source",
              dig(A["direction"], "sample.rows_in_source")),
-    "217": C("direction: sample.unique_event_identities",
-             dig(A["direction"], "sample.unique_event_identities")),
+    # 217 is reached independently by three artifacts: the direction build's
+    # dedup, the magnitude forecast build's dedup, and the 2026-09-04 pooled
+    # recompute. agree() fails loudly if they ever diverge.
+    "217": C("direction: sample.unique_event_identities == "
+             "recompute: primary.after_corrected.n",
+             agree("217 distinct event identities",
+                   dig(A["direction"], "sample.unique_event_identities"),
+                   dig(A["recompute"], "results.primary_magnitude_abs_day_return."
+                       "after_corrected.n"))),
     "68": C("direction: sample.duplicate_rows_removed",
             dig(A["direction"], "sample.duplicate_rows_removed")),
     "-0.7027": C("direction: combined_strategy.direction_only.mean_net_pct",
@@ -542,8 +662,6 @@ CLAIMS = {
                        "stage1_replication.bootstrap_mae_diff.ci95.1")),
     "0.0009811": C("pr35: stage1_replication bootstrap mean",
                    dig(A["pr35"], "stage1_replication.bootstrap_mae_diff.mean")),
-    "28": C("pr35: bootstrap block_days",
-            dig(A["pr35"], "stage1_replication.bootstrap_mae_diff.block_days")),
     "20260817": C("pr35: bootstrap seed",
                   dig(A["pr35"], "stage1_replication.bootstrap_mae_diff.seed")),
     "2000": C("pr35: bootstrap draws",
@@ -569,10 +687,15 @@ ALLOW = {
     "08": "ISO month component of a revision/overlay date",
     "22": "ISO day component of the 2026-08-22 correction overlay",
     "27": "ISO day component of the 2026-08-27 revision date",
-    "233": "abstract word count",
+    "233": "abstract word count (v1.1 draft, superseded)",
+    "239": "abstract word count (corrected 2026-09-04)",
+    "04": "ISO day component of the 2026-09-04 pooled recompute date",
+    "5.0": "STRONG-tier z threshold (definition, z >= 5.0)",
+    "5.2": "subsection number (5.2a, 5.2b added by the correction)",
     "5.8": "subsection number (v1.1 adds 5.1/5.2 and shifts the tail)",
-    "4": "methods subsection prefix 4A / count of sensitivities",
-    "13": "section number (Future work, added in v1.1)",
+    "4": "methods subsection prefix 4A / count of sensitivities / "
+         "count of firms helped / count of interpretation points",
+    "13": "section number (Future work, added in v1.1) / reference list index",
     "10.0": "subsection number (10.0 Why a detectable association ...)",
     "2021": "year",
     "2022": "year",
@@ -598,11 +721,10 @@ ALLOW = {
     "8": "count of replication years / gate count", "9": "count of firms with events",
     "10": "count of firms in universe / reference count",
     "5": "count of years where the augmented model won / horizon in sessions",
-    "4": "count of firms helped / count of interpretation points",
     "3": "count of evidence levels", "2": "count of signal families",
     "7": "count of studies in the evidence matrix",
     "6": "count of gates", "11": "section number", "12": "section number",
-    "13": "reference list index", "15": "article number",
+    "15": "article number",
     "01": "HYP-01 protocol identifier",
     "34": "pull-request identifier (PR #34)",
     "35": "pull-request identifier (PR #35)",
@@ -803,7 +925,7 @@ def main(argv=None):
         ok("d = 1.294 is labelled unmatched and not presented as matched or predictive")
 
     # 3. secondary results must not be promoted
-    PRIMARY_P = "0.0662"
+    PRIMARY_P = "0.00031"
     for sec_p, name in (("0.03707", "benchmark-adjusted"),
                         ("0.00193", "deduplicated"),
                         ("0.00075", "sensitivity D"),
