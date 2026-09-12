@@ -1,0 +1,508 @@
+{
+  "status": "COMPLETE",
+  "row_count": 24,
+  "unique_ticker_count": 24,
+  "expected_ticker_count": 24,
+  "all_six_fields_clean_count": 24,
+  "earnings_lookup_ok_count": 24,
+  "days_to_nearest_earnings_nonnull_count": 24,
+  "field_completeness_pct": {
+    "gst_zscore": 100.0,
+    "wiki_zscore": 100.0,
+    "implied_volatility": 100.0,
+    "realized_vol": 100.0,
+    "price": 100.0,
+    "volume": 100.0
+  },
+  "failed_source_counts": {
+    "earnings": 0,
+    "price_history": 0,
+    "realized_vol": 0,
+    "iv": 0,
+    "gst": 0,
+    "wiki": 0
+  },
+  "elapsed_s": 169.6,
+  "elapsed_min": 2.83,
+  "active_ticker_when_stopped": null,
+  "active_leg_when_stopped": null,
+  "checkpoint_path": null,
+  "final_path": "Live Signal Engine\\GST_Phase2_DailyPanel_TestRun_2026-09-12_run3.csv",
+  "generated_at_utc": "2026-09-12T07:20:06.177863+00:00",
+  "wiki_data_watermark": {
+    "status": "ok",
+    "watermark_date": "2026-09-11",
+    "lag_days": 1,
+    "retrieved_at_utc": "2026-09-12T07:15:10.129466+00:00",
+    "source_url": "https://wikimedia.org/api/rest_v1/metrics/pageviews/aggregate/en.wikipedia.org/all-access/user/daily/2026091100/2026091100",
+    "http_status": 200
+  },
+  "wiki_effective_panel_watermark": {
+    "status": "ok",
+    "effective_panel_watermark_date": "2026-09-11",
+    "method": "min_anchor_month_observed_latest_same_response",
+    "aggregate_vs_panel_lag_days": 0,
+    "measured_count": 24,
+    "expected_count": 24,
+    "binding_tickers": [
+      "AAPL",
+      "ABBV",
+      "ADBE",
+      "AMZN",
+      "BKR",
+      "BRK-B",
+      "CTSH",
+      "DELL",
+      "DVN",
+      "GME",
+      "GOOGL",
+      "GPN",
+      "INTC",
+      "LDOS",
+      "MSFT",
+      "NCLH",
+      "NKE",
+      "QCOM",
+      "SBUX",
+      "STZ",
+      "SYK",
+      "TSLA",
+      "TTWO",
+      "UAL"
+    ],
+    "unmeasured": [],
+    "resolved_at_utc": "2026-09-12T07:15:10.626788+00:00",
+    "per_ticker_latest_available_date": {
+      "AAPL": "2026-09-11",
+      "ABBV": "2026-09-11",
+      "ADBE": "2026-09-11",
+      "AMZN": "2026-09-11",
+      "BKR": "2026-09-11",
+      "BRK-B": "2026-09-11",
+      "CTSH": "2026-09-11",
+      "DELL": "2026-09-11",
+      "DVN": "2026-09-11",
+      "GME": "2026-09-11",
+      "GOOGL": "2026-09-11",
+      "GPN": "2026-09-11",
+      "INTC": "2026-09-11",
+      "LDOS": "2026-09-11",
+      "MSFT": "2026-09-11",
+      "NCLH": "2026-09-11",
+      "NKE": "2026-09-11",
+      "QCOM": "2026-09-11",
+      "SBUX": "2026-09-11",
+      "STZ": "2026-09-11",
+      "SYK": "2026-09-11",
+      "TSLA": "2026-09-11",
+      "TTWO": "2026-09-11",
+      "UAL": "2026-09-11"
+    },
+    "anchor_month_request": {
+      "requested_start": "2026-09-01",
+      "requested_end": "2026-09-11",
+      "request_count": 26,
+      "total_pacing_wait_s": 53.712,
+      "min_request_interval_s": 3.5
+    },
+    "anchor_month_observed": {
+      "AAPL": {
+        "status": "ok",
+        "observed_count": 11,
+        "latest_available_date": "2026-09-11",
+        "http_status": 200,
+        "attempts": 1,
+        "reason": "",
+        "anchor_month_attempt_count": 1,
+        "anchor_month_attempt_statuses": [
+          "200_ok"
+        ],
+        "anchor_month_retry_wait_seconds": [],
+        "anchor_month_recovered_after_transient_404": false,
+        "anchor_month_final_http_status": 200
+      },
+      "ABBV": {
+        "status": "ok",
+        "observed_count": 11,
+        "latest_available_date": "2026-09-11",
+        "http_status": 200,
+        "attempts": 1,
+        "reason": "",
+        "anchor_month_attempt_count": 1,
+        "anchor_month_attempt_statuses": [
+          "200_ok"
+        ],
+        "anchor_month_retry_wait_seconds": [],
+        "anchor_month_recovered_after_transient_404": false,
+        "anchor_month_final_http_status": 200
+      },
+      "ADBE": {
+        "status": "ok",
+        "observed_count": 11,
+        "latest_available_date": "2026-09-11",
+        "http_status": 200,
+        "attempts": 1,
+        "reason": "",
+        "anchor_month_attempt_count": 1,
+        "anchor_month_attempt_statuses": [
+          "200_ok"
+        ],
+        "anchor_month_retry_wait_seconds": [],
+        "anchor_month_recovered_after_transient_404": false,
+        "anchor_month_final_http_status": 200
+      },
+      "AMZN": {
+        "status": "ok",
+        "observed_count": 11,
+        "latest_available_date": "2026-09-11",
+        "http_status": 200,
+        "attempts": 1,
+        "reason": "",
+        "anchor_month_attempt_count": 1,
+        "anchor_month_attempt_statuses": [
+          "200_ok"
+        ],
+        "anchor_month_retry_wait_seconds": [],
+        "anchor_month_recovered_after_transient_404": false,
+        "anchor_month_final_http_status": 200
+      },
+      "BKR": {
+        "status": "ok",
+        "observed_count": 11,
+        "latest_available_date": "2026-09-11",
+        "http_status": 200,
+        "attempts": 1,
+        "reason": "",
+        "anchor_month_attempt_count": 1,
+        "anchor_month_attempt_statuses": [
+          "200_ok"
+        ],
+        "anchor_month_retry_wait_seconds": [],
+        "anchor_month_recovered_after_transient_404": false,
+        "anchor_month_final_http_status": 200
+      },
+      "BRK-B": {
+        "status": "ok",
+        "observed_count": 11,
+        "latest_available_date": "2026-09-11",
+        "http_status": 200,
+        "attempts": 1,
+        "reason": "",
+        "anchor_month_attempt_count": 1,
+        "anchor_month_attempt_statuses": [
+          "200_ok"
+        ],
+        "anchor_month_retry_wait_seconds": [],
+        "anchor_month_recovered_after_transient_404": false,
+        "anchor_month_final_http_status": 200
+      },
+      "CTSH": {
+        "status": "ok",
+        "observed_count": 11,
+        "latest_available_date": "2026-09-11",
+        "http_status": 200,
+        "attempts": 1,
+        "reason": "",
+        "anchor_month_attempt_count": 1,
+        "anchor_month_attempt_statuses": [
+          "200_ok"
+        ],
+        "anchor_month_retry_wait_seconds": [],
+        "anchor_month_recovered_after_transient_404": false,
+        "anchor_month_final_http_status": 200
+      },
+      "DELL": {
+        "status": "ok",
+        "observed_count": 11,
+        "latest_available_date": "2026-09-11",
+        "http_status": 200,
+        "attempts": 1,
+        "reason": "",
+        "anchor_month_attempt_count": 1,
+        "anchor_month_attempt_statuses": [
+          "200_ok"
+        ],
+        "anchor_month_retry_wait_seconds": [],
+        "anchor_month_recovered_after_transient_404": false,
+        "anchor_month_final_http_status": 200
+      },
+      "DVN": {
+        "status": "ok",
+        "observed_count": 11,
+        "latest_available_date": "2026-09-11",
+        "http_status": 200,
+        "attempts": 1,
+        "reason": "",
+        "anchor_month_attempt_count": 1,
+        "anchor_month_attempt_statuses": [
+          "200_ok"
+        ],
+        "anchor_month_retry_wait_seconds": [],
+        "anchor_month_recovered_after_transient_404": false,
+        "anchor_month_final_http_status": 200
+      },
+      "GME": {
+        "status": "ok",
+        "observed_count": 11,
+        "latest_available_date": "2026-09-11",
+        "http_status": 200,
+        "attempts": 2,
+        "reason": "",
+        "anchor_month_attempt_count": 2,
+        "anchor_month_attempt_statuses": [
+          "429",
+          "200_ok"
+        ],
+        "anchor_month_retry_wait_seconds": [
+          14.0
+        ],
+        "anchor_month_recovered_after_transient_404": false,
+        "anchor_month_final_http_status": 200
+      },
+      "GOOGL": {
+        "status": "ok",
+        "observed_count": 11,
+        "latest_available_date": "2026-09-11",
+        "http_status": 200,
+        "attempts": 1,
+        "reason": "",
+        "anchor_month_attempt_count": 1,
+        "anchor_month_attempt_statuses": [
+          "200_ok"
+        ],
+        "anchor_month_retry_wait_seconds": [],
+        "anchor_month_recovered_after_transient_404": false,
+        "anchor_month_final_http_status": 200
+      },
+      "GPN": {
+        "status": "ok",
+        "observed_count": 11,
+        "latest_available_date": "2026-09-11",
+        "http_status": 200,
+        "attempts": 1,
+        "reason": "",
+        "anchor_month_attempt_count": 1,
+        "anchor_month_attempt_statuses": [
+          "200_ok"
+        ],
+        "anchor_month_retry_wait_seconds": [],
+        "anchor_month_recovered_after_transient_404": false,
+        "anchor_month_final_http_status": 200
+      },
+      "INTC": {
+        "status": "ok",
+        "observed_count": 11,
+        "latest_available_date": "2026-09-11",
+        "http_status": 200,
+        "attempts": 1,
+        "reason": "",
+        "anchor_month_attempt_count": 1,
+        "anchor_month_attempt_statuses": [
+          "200_ok"
+        ],
+        "anchor_month_retry_wait_seconds": [],
+        "anchor_month_recovered_after_transient_404": false,
+        "anchor_month_final_http_status": 200
+      },
+      "LDOS": {
+        "status": "ok",
+        "observed_count": 11,
+        "latest_available_date": "2026-09-11",
+        "http_status": 200,
+        "attempts": 1,
+        "reason": "",
+        "anchor_month_attempt_count": 1,
+        "anchor_month_attempt_statuses": [
+          "200_ok"
+        ],
+        "anchor_month_retry_wait_seconds": [],
+        "anchor_month_recovered_after_transient_404": false,
+        "anchor_month_final_http_status": 200
+      },
+      "MSFT": {
+        "status": "ok",
+        "observed_count": 11,
+        "latest_available_date": "2026-09-11",
+        "http_status": 200,
+        "attempts": 1,
+        "reason": "",
+        "anchor_month_attempt_count": 1,
+        "anchor_month_attempt_statuses": [
+          "200_ok"
+        ],
+        "anchor_month_retry_wait_seconds": [],
+        "anchor_month_recovered_after_transient_404": false,
+        "anchor_month_final_http_status": 200
+      },
+      "NCLH": {
+        "status": "ok",
+        "observed_count": 11,
+        "latest_available_date": "2026-09-11",
+        "http_status": 200,
+        "attempts": 1,
+        "reason": "",
+        "anchor_month_attempt_count": 1,
+        "anchor_month_attempt_statuses": [
+          "200_ok"
+        ],
+        "anchor_month_retry_wait_seconds": [],
+        "anchor_month_recovered_after_transient_404": false,
+        "anchor_month_final_http_status": 200
+      },
+      "NKE": {
+        "status": "ok",
+        "observed_count": 11,
+        "latest_available_date": "2026-09-11",
+        "http_status": 200,
+        "attempts": 1,
+        "reason": "",
+        "anchor_month_attempt_count": 1,
+        "anchor_month_attempt_statuses": [
+          "200_ok"
+        ],
+        "anchor_month_retry_wait_seconds": [],
+        "anchor_month_recovered_after_transient_404": false,
+        "anchor_month_final_http_status": 200
+      },
+      "QCOM": {
+        "status": "ok",
+        "observed_count": 11,
+        "latest_available_date": "2026-09-11",
+        "http_status": 200,
+        "attempts": 1,
+        "reason": "",
+        "anchor_month_attempt_count": 1,
+        "anchor_month_attempt_statuses": [
+          "200_ok"
+        ],
+        "anchor_month_retry_wait_seconds": [],
+        "anchor_month_recovered_after_transient_404": false,
+        "anchor_month_final_http_status": 200
+      },
+      "SBUX": {
+        "status": "ok",
+        "observed_count": 11,
+        "latest_available_date": "2026-09-11",
+        "http_status": 200,
+        "attempts": 1,
+        "reason": "",
+        "anchor_month_attempt_count": 1,
+        "anchor_month_attempt_statuses": [
+          "200_ok"
+        ],
+        "anchor_month_retry_wait_seconds": [],
+        "anchor_month_recovered_after_transient_404": false,
+        "anchor_month_final_http_status": 200
+      },
+      "STZ": {
+        "status": "ok",
+        "observed_count": 11,
+        "latest_available_date": "2026-09-11",
+        "http_status": 200,
+        "attempts": 2,
+        "reason": "",
+        "anchor_month_attempt_count": 2,
+        "anchor_month_attempt_statuses": [
+          "429",
+          "200_ok"
+        ],
+        "anchor_month_retry_wait_seconds": [
+          22.0
+        ],
+        "anchor_month_recovered_after_transient_404": false,
+        "anchor_month_final_http_status": 200
+      },
+      "SYK": {
+        "status": "ok",
+        "observed_count": 11,
+        "latest_available_date": "2026-09-11",
+        "http_status": 200,
+        "attempts": 1,
+        "reason": "",
+        "anchor_month_attempt_count": 1,
+        "anchor_month_attempt_statuses": [
+          "200_ok"
+        ],
+        "anchor_month_retry_wait_seconds": [],
+        "anchor_month_recovered_after_transient_404": false,
+        "anchor_month_final_http_status": 200
+      },
+      "TSLA": {
+        "status": "ok",
+        "observed_count": 11,
+        "latest_available_date": "2026-09-11",
+        "http_status": 200,
+        "attempts": 1,
+        "reason": "",
+        "anchor_month_attempt_count": 1,
+        "anchor_month_attempt_statuses": [
+          "200_ok"
+        ],
+        "anchor_month_retry_wait_seconds": [],
+        "anchor_month_recovered_after_transient_404": false,
+        "anchor_month_final_http_status": 200
+      },
+      "TTWO": {
+        "status": "ok",
+        "observed_count": 11,
+        "latest_available_date": "2026-09-11",
+        "http_status": 200,
+        "attempts": 1,
+        "reason": "",
+        "anchor_month_attempt_count": 1,
+        "anchor_month_attempt_statuses": [
+          "200_ok"
+        ],
+        "anchor_month_retry_wait_seconds": [],
+        "anchor_month_recovered_after_transient_404": false,
+        "anchor_month_final_http_status": 200
+      },
+      "UAL": {
+        "status": "ok",
+        "observed_count": 11,
+        "latest_available_date": "2026-09-11",
+        "http_status": 200,
+        "attempts": 1,
+        "reason": "",
+        "anchor_month_attempt_count": 1,
+        "anchor_month_attempt_statuses": [
+          "200_ok"
+        ],
+        "anchor_month_retry_wait_seconds": [],
+        "anchor_month_recovered_after_transient_404": false,
+        "anchor_month_final_http_status": 200
+      }
+    },
+    "anchor_month_response_reuse": {
+      "tickers_reused": [
+        "AAPL",
+        "ABBV",
+        "ADBE",
+        "AMZN",
+        "BKR",
+        "BRK-B",
+        "CTSH",
+        "DELL",
+        "DVN",
+        "GME",
+        "GOOGL",
+        "GPN",
+        "INTC",
+        "LDOS",
+        "MSFT",
+        "NCLH",
+        "NKE",
+        "QCOM",
+        "SBUX",
+        "STZ",
+        "SYK",
+        "TSLA",
+        "TTWO",
+        "UAL"
+      ],
+      "reused_in_memory_only": true,
+      "written_to_cache": false,
+      "second_anchor_month_request_issued": false
+    }
+  }
+}
