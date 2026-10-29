@@ -1,0 +1,31 @@
+GST HYP-01 / A9 draft manifest
+Generated (host clock): 2026-08-26 America/Chicago; filed under the 2026-08-27 review-cycle label
+REGENERATED after the 2026-08-27 correction pass (PR #39).
+Branch: hyp01-a9-reconciliation-20260826
+Base:   phase6-control-matching-integrity @ 63e8a13d8fadc4a52b8046df983fb6a8705e9985
+
+All paths are relative to the repository root.
+This manifest lists the eight review drafts. The manifest file itself is the ninth artifact
+and is not self-hashed (it cannot contain its own hash).
+
+#      bytes  lines  sha256
+----------------------------------------------------------------------------------------------------
+1      18820    264  2a17bb51bef81fabe224d5adbc26d0238f8f3fabbdad0bd5b8f2d46a54b94fb1
+    Live Signal Engine/HYP01_LITERATURE_FRAMING_AMENDMENT_v0.3_DRAFT.md
+2      15500    225  971b660301a3f996e4b641841725014bb7377ebc728c6d517ecbe9dff195eec4
+    Live Signal Engine/A9_EFFECT_SIZE_COMPARABILITY_MEMO_v0.3_DRAFT.md
+3      19443    119  aa7b3adf93d0ca193c0cc9d46786d89d016e043d6d6d2577315175b81d4b6a92
+    Live Signal Engine/HYP01_A9_ARTIFACT_RECONCILIATION_TABLE_v1.0_DRAFT.md
+4      14635    216  ce5f0f399a3eae612af1f7fd43f72b804bcc852ed3526a6b6715ba7743649987
+    Live Signal Engine/HYP01_A9_LITERATURE_SEARCH_LOG_2026-08-26.md
+5       6565    109  037e3aeea0dafdce4756046efacd513ffca66b150f5a66747fcfee3271fa2aea
+    Live Signal Engine/C6_C7_GAP_AUDIT_ERRATUM_DRAFT.md
+6      15502    249  42c0c6809ed43307d7e0ecf82fe543d9488162b982af91209bd1e80123ef35fc
+    Live Signal Engine/GST_HYP01_A9_REVIEW_PACKET_2026-08-27_DRAFT.md
+7      11753    189  1a90f272a3566a1c2797e44ceb8365fe724d1ee0d7f64bbe593d8ac4c6f4b193
+    Live Signal Engine/HYP01_SESOI_DECISION_PACKET_v0.1_DRAFT.md
+8      19991    348  2bda35cad441d41c8d3a573745bbae829dcb6d3508d439bbcbb163c67289cccb
+    Live Signal Engine/HYP01_INFERENCE_SIZE_SIMULATION_PROTOCOL_v0.1_DRAFT.md
+
+Verification: recompute with
+  sha256sum "Live Signal Engine/<name>"
