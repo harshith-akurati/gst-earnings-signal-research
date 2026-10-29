@@ -214,6 +214,7 @@ from GST_Live_Signal_Engine import (
     compute_latest_zscore, fetch_days_to_next_earnings,
     GEO as GST_GEO, GPROP as GST_GPROP, CATEGORY as GST_CATEGORY,
 )
+import gst_trends_frame_archive
 import GST_FixedWindow_PerEvent_Canonical as canonical
 from GST_Wikipedia_Pageviews_Pull import TICKER_TO_WIKI_ARTICLE, to_weekly
 import GST_Phase2_Wikipedia_Transport as wiki_transport
@@ -379,6 +380,36 @@ def _bounded_leg(fn, timeout_s: float, ticker: str, leg: str, *args, **kwargs):
     return run_bounded(_wrapped, timeout_s)
 
 
+# --- RAW TRENDS RESPONSE ARCHIVE -- see gst_trends_frame_archive.py for the
+# fail-closed artifact/manifest writer itself. Every attempt this script
+# makes (success, empty, malformed, or an outright failure of the pytrends
+# call) is archived before fetch_ticker_series_scoped_backoff() reshapes or
+# reacts to it. Trends rescales its output on every query, so an attempt
+# not saved now can never be reconstructed later, regardless of whether it
+# happened to succeed. Purely additive: does not change
+# fetch_ticker_series_scoped_backoff()'s return value or retry/budget logic.
+# gst_trends_frame_archive.write_trends_attempt_artifact() itself is
+# fail-closed (raises on an artifact-integrity problem) by design -- THIS
+# wrapper is what guarantees an archive-write failure, of any kind, is
+# logged loudly and never raised into the capture. ---
+TRENDS_ARCHIVE_DIR = OUT_DIR / "GST_Trends_Raw_Capture"
+
+
+def _safe_archive_trends_attempt(ticker: str, attempt: int, timeframe: str, *,
+                                  df: pd.DataFrame | None, status: str,
+                                  error_message: str | None) -> None:
+    try:
+        gst_trends_frame_archive.write_trends_attempt_artifact(
+            archive_dir=TRENDS_ARCHIVE_DIR,
+            ticker=ticker, query_term=ticker, attempt=attempt, run_date=RUN_DATE.isoformat(),
+            timeframe=timeframe, geo=GST_GEO, gprop=GST_GPROP, cat=GST_CATEGORY,
+            df=df, status=status, error_message=error_message,
+        )
+    except Exception as e:
+        log(f"    [{ticker}] [ARCHIVE WARNING] failed to archive raw Trends response "
+            f"(attempt {attempt}, status={status}): {e!r} (capture continues)")
+
+
 def fetch_ticker_series_scoped_backoff(pt: TrendReq, term: str) -> tuple[pd.DataFrame, dict]:
     """Same pytrends query/reshape as GST_Live_Signal_Engine.fetch_ticker_series() --
     only the 429 retry schedule differs. See "SCOPED 429-BACKOFF FIX" in the
@@ -397,10 +428,30 @@ def fetch_ticker_series_scoped_backoff(pt: TrendReq, term: str) -> tuple[pd.Data
     attempts_used = 0
     budget_exhausted = False
 
-    def _do_request():
-        pt.build_payload([term], timeframe=timeframe, geo=GST_GEO, gprop=GST_GPROP, cat=GST_CATEGORY)
-        df = pt.interest_over_time()
-        if df is None or df.empty or term not in df.columns:
+    def _do_request(attempt):
+        try:
+            pt.build_payload([term], timeframe=timeframe, geo=GST_GEO, gprop=GST_GPROP, cat=GST_CATEGORY)
+            df = pt.interest_over_time()
+        except Exception as e:
+            # The attempt failed before pytrends ever returned anything --
+            # archived as status="failed" (df=None) so this attempt still
+            # leaves evidence, then re-raised UNCHANGED so the retry/backoff
+            # logic below (which inspects the exception message for a 429)
+            # behaves exactly as it did before this archive existed.
+            _safe_archive_trends_attempt(term, attempt, timeframe, df=None,
+                                          status=gst_trends_frame_archive.STATUS_FAILED,
+                                          error_message=str(e))
+            raise
+
+        if df is None or df.empty:
+            status = gst_trends_frame_archive.STATUS_EMPTY
+        elif term not in df.columns:
+            status = gst_trends_frame_archive.STATUS_MALFORMED
+        else:
+            status = gst_trends_frame_archive.STATUS_SUCCESS
+        _safe_archive_trends_attempt(term, attempt, timeframe, df=df, status=status, error_message=None)
+
+        if status != gst_trends_frame_archive.STATUS_SUCCESS:
             raise RuntimeError("Empty result or missing term column")
         return pd.DataFrame({
             "Week": df.index,
@@ -420,7 +471,7 @@ def fetch_ticker_series_scoped_backoff(pt: TrendReq, term: str) -> tuple[pd.Data
         # TrendReq's own timeout=(30,60) does -- verified via the injected
         # slow-call test, not assumed. leg="gst" is what the SAFEGUARD TEST
         # HOOK matches on for this leg.
-        out, timed_out, elapsed, err = _bounded_leg(_do_request, GST_ATTEMPT_TIMEOUT_S, term, "gst")
+        out, timed_out, elapsed, err = _bounded_leg(_do_request, GST_ATTEMPT_TIMEOUT_S, term, "gst", attempt)
         if not timed_out and err is None:
             return out, {
                 "attempts": attempts_used, "rate_limit_events": rate_limit_events,
