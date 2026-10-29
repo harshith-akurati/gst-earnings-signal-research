@@ -1,0 +1,4 @@
+Specification,Estimate,p,Status
+**`primary_magnitude_abs_day_return`**,**+1.509 pp**,**0.0662**,**PRIMARY — designated in advance**
+`magnitude_abs_excess_vs_spy` (benchmark-adjusted),+1.5388 pp,0.03707,sensitivity
+`repeated_control_sensitivity.deduplicated_cr2` (deduplicated),—,0.00193,sensitivity

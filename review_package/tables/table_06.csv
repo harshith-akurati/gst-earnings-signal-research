@@ -1,0 +1,8 @@
+Construct,Target,Sample,Association,Incremental prediction,Trading,Principal limitation,Final interpretation
+Search attention,Absolute earnings move,Retrospective US equities,Present in places,"**No** — +0.0131 pp, p = 0.98332","Standalone 0.8543% net, not incremental",Drift confound,"Event selector, not alpha"
+Search attention,Move direction,217 unique events,None detected,**No** — Brier 0.2711 vs 0.2560; AUC 0.4654,−0.7027% net,Leakage before correction,No directional skill
+Search attention,Move magnitude,Retrospective panel,Weak,"**No** — MAE 3.6299 vs 3.6284, p = 0.9827",Not run,Noisy normalisation,No incremental value
+Search attention,Weekly volatility,Weekly panel,Weak,"**No** — −0.0309%, interval spans zero",Not run,Small effect size,No incremental value
+Product search,Restaurant earnings moves,Sector pilot,Not established,**No** — Brier and MAE both worsened,Not run,Small sample,`NO_INCREMENTAL_SEARCH_VALUE`
+Vendor earnings surprise,Initial reaction 2023–2025,116 OOS events,"Positive, not significant (+0.13515, p = 0.148026)","**Gate failed** — +2.482%, interval spans zero",Not authorised,Estimate vintage,"Suggestive, not established"
+Vendor earnings surprise,Initial reaction 2010–2017,283 OOS events,"**Positive and significant** (+0.2169, p = 0.000236)","**Gate failed** — +2.216%, 5 of 8 years",Not authorised,Estimate vintage,"Real association, unstable prediction"
