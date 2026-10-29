@@ -1,0 +1,322 @@
+# HYP-04 operator runbook — from a curated edge to a target value (2026-08-23)
+
+**What this is:** the end-to-end path through the HYP-04 modules that now compose, written down because it currently exists only in code and in one integration test.
+
+*(No module count is stated here on purpose. A number in prose goes stale the next time the chain gains a step, which is the failure this project keeps repeating — see the `%d checks` and `zero rows are curated` corrections. The diagram below is the count.)*
+
+**What this is NOT:** permission to display anything. Every step below runs with the display gate **CLOSED**. Completing all of them produces a number; it does not produce a finding, and it does not move any gate condition. See §7.
+
+---
+
+## 0. The chain
+
+```
+  curated linkage map        HYP04_Linkage_Map_v1.0.csv
+        |                    (curated_linkage.py validates it)
+        v
+  anchor events  <---------  earnings_events.py   8-K Item 2.02 -> release date
+        |                    (candidates_for_ticker)   + BMO/AMC
+        v
+  session index  --------->  event_panel.py       calendar date -> session index
+        |                    (resolve_events)
+        v
+  closes request  -------->  closes_requirements.py   which closes to collect
+        |                    (requirements_for / CLI)
+        v
+  operator CSV   --------->  peer_returns.py      closes -> daily log returns
+        |                    (load_panel, coverage_for_event)
+        v
+  eligibility    --------->  linkage_resolution.py + pair_eligibility.py
+        |                    (P1-P7; P5 fed by DERIVED coverage)
+        v
+  target         --------->  target.py            RVar log-ratio per horizon
+```
+
+Each arrow is a real function call, exercised together in
+`test_hyp04_supply_chain_hedge_event_panel.py::test_6`.
+
+## 1. Resolve the response session — do this first, and do not skip it
+
+An anchor event has an **earnings date**. The analysis needs the **session the market response is measured from**. These differ for every after-close release.
+
+```python
+from gst_market_response.exchange_calendar import (
+    compute_expected_next_full_trading_session_xnys)
+
+response_session = compute_expected_next_full_trading_session_xnys(
+    earnings_date, release_market_session)   # "BMO" or "AMC"
+```
+
+- **BMO** on a trading day → that same session.
+- Everything else → the next session.
+
+**If you pass a raw earnings date instead, every AMC event is one session early.** Nothing raises. The target still returns a finite, ordinary-looking number, computed from a window that begins before the news. This is the single most dangerous mistake in the whole chain.
+
+`event_panel.assert_sessions_resolved()` will flag dates that are not sessions at all — the signature of unresolved input, since weekends and holidays cannot survive resolution. It cannot catch a BMO release that legitimately lands on its own earnings date, so it is a smoke alarm, not a proof.
+
+## 1a. Get the anchor events in the first place
+
+`earnings_events.py` derives them from 8-K **Item 2.02** filings, with the
+release session already classified:
+
+```
+PYTHONPATH=. .venv/Scripts/python.exe -m hyp04_supply_chain_hedge.earnings_events \
+    --ticker MCK --since MCK:2013-05-07 \
+    --ticker PKG --since PKG:2016-02-26 \
+    --contact "Your Name you@realdomain.com" \
+    --out "Live Signal Engine/HYP04_ANCHOR_EVENT_CANDIDATES_2026-08-23.csv"
+```
+
+`--since` takes each curated edge's `as_of_date`, so P3 does not later discard
+what you collect. The walk alone yields 97; with the addenda below merged, **98** — MCK 56, PKG 42.
+
+Three things that module knows and you should not re-derive by hand:
+
+- **`reportDate`, never `filingDate`.** SEC stamps anything accepted after
+  17:30 ET with the *next business day* as its filing date. PKG files
+  ~18:00 ET, so its two dates disagree on 37 of 42 events; MCK files ~16:06 ET
+  and they agree on 54 of 55. Using `filingDate` is invisible on MCK and one
+  session late on nearly every PKG event.
+- **BMO/AMC is derived from the acceptance timestamp**, converted to
+  America/New_York. `UNKNOWN` is a refusal, not a placeholder — 2 of the 97
+  derived rows, both resolved by the addenda below.
+- **Item 2.02 is a floor, not a census.** A filer can omit the tag. MCK's
+  Q3 FY2020 release (2020-02-04, BMO) is tagged `9.01` only, so the walk
+  cannot see it; `find_cadence_gaps()` reports the resulting 203-day hole and
+  deliberately never fills it. It reaches the candidate set only as a curated
+  addendum, which is why that file exists.
+
+Full write-up: `HYP04_ANCHOR_EVENT_SOURCE_2026-08-23.md`.
+
+### Curated addenda — events the walk cannot derive
+
+`HYP04_ANCHOR_EVENT_ADDENDA.csv` holds anchor events established by reading a
+filing rather than by the walk. It is merged automatically (`--no-addenda`
+turns it off). Every row carries linkage-map-style provenance —
+`source_accession`, `source_citation`, `curated_by`, `curated_date` — and a row
+missing any of them is **rejected, not accepted quietly**.
+
+A curated row may `supersede` a derived one. This matters because the two do
+**not** collide on `event_id`: the id embeds the date, and the date is what is
+being corrected. `MCK-2023-11-01` and `MCK-2023-10-27` are the same earnings
+release, and merging both would count it twice — invisibly, since a
+double-count does not look wrong in a total.
+
+Two guards, both raising rather than warning:
+
+- superseding an event the walk **did not produce** means the addendum is
+  stale, so the correction may no longer apply
+- a curated id **colliding** with a derived id is ambiguous — a row either adds
+  or supersedes, never shadows
+
+Current effect: 97 derived − 2 superseded + 3 curated = **98 events, zero
+UNKNOWN sessions, and no cadence gaps.**
+
+**These are candidates, not eligible events.** Nothing here is screened, and no
+gate condition moves.
+
+## 2. Ask what closes you need
+
+**Use `--events-csv`.** It takes the candidate file from §1a, resolves BMO/AMC
+to the response session for you, and skips anything it cannot resolve:
+
+```
+PYTHONPATH=. .venv/Scripts/python.exe -m hyp04_supply_chain_hedge.closes_requirements \
+    --events-csv "Live Signal Engine/HYP04_ANCHOR_EVENT_CANDIDATES_2026-08-23.csv"
+```
+
+Against the real 98 merged candidates (2026-08-24):
+
+```
+CVS: 2193 session(s)   for 55 event(s)
+ODP: 1722 session(s)   for 42 event(s)
+
+TOTAL ROWS TO PRODUCE: 3915
+
+TRUNCATED -- 1 pair(s) ...
+  MCK -> CVS @ MCK-2026-08-05: needs sessions [3648..3688] but the index holds [0..3680]
+```
+
+No `SKIPPED ... UNKNOWN` lines appear any more: the addenda resolve both
+formerly-unresolved events. Before they existed the run skipped two and
+produced 3,792 rows.
+
+**That is the real size of the job: ~3,900 closes, not 82.** Overlap dedupe
+saves only 62 rows (1%) — quarterly events sit about 63 sessions apart and the
+window is 41, so windows rarely touch. Do not plan on dedupe helping.
+
+The total is **as-of dated and drifts upward**: `--as-of` defaults to today, and
+the truncated event above joins the request once its horizon finishes trading.
+Re-run the command; do not quote the number.
+
+### `--as-of` and why a request never runs into the future
+
+The index ends at `--as-of` (default today). A close that has not happened
+cannot be collected, so an event whose horizon runs past it is reported as
+**truncated**, not listed as sessions to go find.
+
+This was a real defect, fixed 2026-08-24. The CLI used to pad the index to
+`max(event year) + pad_years`; measured on 2026-08-24, an event with response
+session 2026-08-06 produced a clean 41-session request running to **2026-09-03
+— ten days into the future** — with no warning. With the default pad it instead
+raised an unhandled `DateOutOfBounds` from the calendar. Both are gone.
+
+A right-edge truncation means *wait for the sessions to trade*. Only a
+left-edge one is fixed by raising `--pad-years`.
+
+### The manual form
+
+For a handful of events, `--event ID:TICKER:DATE` still works — but the DATE
+must already be the **response session**, resolved per §1:
+
+```
+PYTHONPATH=. .venv/Scripts/python.exe -m hyp04_supply_chain_hedge.closes_requirements \
+    --event MCK-2020Q3:MCK:2020-02-05 \
+    --event PKG-2020:PKG:2020-02-24
+```
+
+> **Those two dates are INVENTED** — kept only to show the output shape. MCK
+> never reported on 2020-02-05; its real Q3 FY2020 release was **2020-02-04,
+> BMO**. Do not collect these windows.
+>
+> The warning is here because the dates originally appeared unlabelled,
+> immediately after §1 warns that an unresolved date silently corrupts every
+> AMC event — the exact trap this document describes.
+
+```
+CVS: 41 session(s) 2020-01-07 .. 2020-03-05  for event(s) MCK-2020Q3
+ODP: 41 session(s) 2020-01-24 .. 2020-03-23  for event(s) PKG-2020
+TOTAL ROWS TO PRODUCE: 82
+```
+
+**41 per (peer, event), not 40.** 20 reference + 20 horizon = 40 *returns*, but a return needs the close before it too, so the window starts one session earlier. Collect 40 and coverage denies with *"reference window has 19/20 finite returns"* — accurate, and pointing at the window rather than at the close you missed.
+
+The tool **requires the authoritative XNYS calendar** and refuses without it (`pip install exchange_calendars`) rather than approximating with weekdays. A weekday approximation puts market holidays into the request; you would collect closes that do not exist.
+
+Pairs that condition **P3** would deny — the edge was disclosed on or after the event — are reported as `SKIPPED` with the reason. That is not a bug: collecting them would waste effort on observations the analysis must discard.
+
+## 3. Produce the CSV
+
+**Let the tool write the rows.** `--emit-requests DIR` writes one file per peer
+with every required row already present and the close column blank, so you fill
+a column instead of constructing rows:
+
+```
+PYTHONPATH=. .venv/Scripts/python.exe -m hyp04_supply_chain_hedge.closes_requirements \
+    --events-csv "Live Signal Engine/HYP04_ANCHOR_EVENT_CANDIDATES_2026-08-23.csv" \
+    --emit-requests ./closes_requests
+```
+
+```
+wrote: closes_requests/CVS_closes_REQUEST.csv  (2193 row(s), close column blank)
+wrote: closes_requests/ODP_closes_REQUEST.csv  (1722 row(s), close column blank)
+```
+
+```csv
+ticker,session_date,close
+CVS,2013-06-27,
+CVS,2013-06-28,
+```
+
+This removes the step most likely to introduce an off-calendar date, a
+duplicate, or a missing session — each of which the loader rejects rather than
+repairs. The header is **read from the template**, not restated, so it cannot
+drift from what `peer_returns` validates.
+
+**Leave a missing close EMPTY, never `0`.** A zero return is a real observation
+(a halt, a flat close); an empty cell is the absence of one.
+
+Schema: `HYP04_Peer_Closes_TEMPLATE_headers.csv`
+
+```csv
+ticker,session_date,close
+CVS,2020-01-07,74.11
+```
+
+Rules the loader enforces, all of which reject rather than repair:
+
+| Rule | Why |
+|---|---|
+| `close` finite and **strictly positive** | `log(p_t / p_{t-1})` is undefined otherwise; substituting anything invents a return no trade produced |
+| dates must be **sessions in the index** | off-calendar rows are reported in `off_calendar_dates`, usually meaning the file was built against a different calendar |
+| no duplicate `(ticker, session_date)` | two closes for one session is a source defect; picking one hides it |
+| **gaps are never filled** | a missing close kills the return on *both* adjacent sessions — a return spanning a gap is not a one-session return, and admitting it inflates realized variance exactly where the data is worst |
+
+Missing is `None`, never `0.0`. A zero return is a real observation (a halt, a flat close) and must not be confused with absent data.
+
+## 4. Load and check coverage
+
+```python
+from hyp04_supply_chain_hedge.peer_returns import load_panel, coverage_for_event
+
+panel = load_panel(csv_path, sessions=sessions)
+assert panel.provenance.loads_clean, panel.provenance.as_dict()
+
+cov = coverage_for_event(panel.series["CVS"], event_id="MCK-2020Q3",
+                         anchor_day=day_index)
+print(cov.sufficient, cov.reasons)
+```
+
+`Coverage.reasons` distinguishes *window runs off the index* from *window has a hole*. Those need different fixes — extend the index versus find the missing close.
+
+## 5. Resolve pairs
+
+```python
+from hyp04_supply_chain_hedge.peer_returns import peer_history_map
+from hyp04_supply_chain_hedge.linkage_resolution import resolve_from_curated_map
+
+hist = peer_history_map(panel.series, events)          # DERIVED, never asserted
+res  = resolve_from_curated_map(events, map_path=map_path,
+                                anchor_eligibility=elig, peer_history=hist)
+print(res.denial_reasons())
+```
+
+**`peer_history` must come from `peer_history_map`.** P5 exists to ask whether a peer has usable history; a caller that can simply assert `True` makes it an honour system, in exactly the way an assertable `uses_placeholder_linkage` would have made C5 one.
+
+Read `denial_reasons()` rather than only the count. P3-heavy denials are a *curation* problem (the map's as-of dates do not reach far enough back); P5-heavy denials are a *data* problem. A single total cannot tell them apart.
+
+`anchor_eligibility` is **required** for P1. Omit it and every pair denies on P1 — correctly, since an unchecked event is not an eligible event.
+
+## 6. Compute the target
+
+```python
+import numpy as np
+from hyp04_supply_chain_hedge.target import raw_log_ratio_target
+
+arr = np.array([np.nan if r is None else r
+                for r in panel.series["CVS"].log_returns], dtype=float)
+val = raw_log_ratio_target(arr, anchor_day, horizon)
+```
+
+**Encode missing as `np.nan`, never `0.0`.** A zero substitution fabricates the observation the loader refused to invent, and makes the target return a finite number from data that does not exist. This exact mistake was made while writing the peer-returns suite and caught only because coverage and the target were asserted to agree at *every* day index.
+
+## 7. What you have, and what you do not
+
+After every step above you have a **target value for one (event, peer, horizon)**.
+
+You do **not** have:
+
+- a finding — the display gate is CLOSED and every finding panel is empty
+- evidence about supply-chain transmission
+- anything displayable at any event count
+
+The gate's conditions are unchanged by everything above:
+
+| | |
+|---|---|
+| **C1** status | HYP-04 is `PREREGISTERED_MEASUREMENT_NOT_IMPLEMENTED` |
+| **C2** threshold | 193 eligible **anchor events**. Curating edges does not move this — only observed anchor events do |
+| **C3** freeze | no event-set freeze record exists |
+| **C4** decisions | MET since registry v1.2 |
+| **C5** linkage | denies while the analysis path runs on the positional-synthetic placeholder |
+
+**C5 does not clear because a curated map exists.** It reads `FreezeRecord.uses_placeholder_linkage`, which `linkage_resolution.freeze_record_fields()` *derives* from what a run actually read. A freeze claiming non-placeholder linkage can only come from a run that genuinely used a curated map.
+
+## 8. Known limitations, recorded rather than absorbed
+
+- **`peer_history_map` is per-peer, and coverage is really per-pair.** A peer is marked available only if it covers **every** event it appears in, which undercounts. Use `coverage_for_event` for the precise per-pair answer. Decision of 2026-08-23: keep the conservative form for now.
+- **Two curated edges is not a linkage map.** Registry v1.3 records `exists_partial` precisely so this is not mistaken for sufficiency.
+- **No peer price data has ever been captured.** The registry records `data_captured: false` for both capture paths. A module that can ingest is not ingested data.
+- **98 candidate anchor events now exist; zero ELIGIBLE ones do.** `eligible_event_counts` is still zero across the board. Candidates are unscreened — screening is HYP-01's registry, not HYP-04's to fill — and C2's floor is 193 *eligible* events, which two anchors cannot reach.
+- **Item 2.02 is a coverage floor.** A filer can release earnings without the tag; MCK 2020-02-04 is a confirmed instance. An absent candidate is not evidence the company did not report. `find_cadence_gaps()` detects the resulting holes and deliberately does not fill them.
+- **Two candidates have an unresolved release session** (MCK 2023-10-27, PKG 2020-07-24). Both bundle earnings with an unrelated earlier item, so `reportDate` belongs to that item. They are skipped, not guessed.

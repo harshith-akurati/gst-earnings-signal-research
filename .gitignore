@@ -5,9 +5,31 @@ streetview_vlm/
 __pycache__/
 *.pyc
 
+# Local virtualenv created for HYP-04 Phase 0 development. Machine-specific
+# and large; never part of repo content. Recreate with the commands in
+# HYP04_PHASE0_SESSION_HANDOFF.md.
+.venv/
+
 # Local Claude Code session config (permission allowlist etc.), not project content.
 .claude/
 
 # Raw SEC HTTP response cache for the semiconductor EPS work. Provider bodies only --
 # never project content, and previously swept into a commit by accident.
 Live Signal Engine/Semiconductor_EPS_Absorption/_cache/
+
+# EDGAR response cache (hyp04_supply_chain_hedge). Raw SEC filing bodies,
+# reproducible by re-running the walk, and large. The code that produces and
+# reads it is version-controlled; the corpus itself is not.
+.edgar_cache/
+
+# Resume checkpoint for run_hyp07_reverse_competitor_search_scaled.py.
+# Reproducible by re-running (or resuming) the live search; scratch
+# machinery, not a research artifact. The code that produces and reads it
+# is version-controlled; this transient state is not.
+.hyp07_scaled_search_checkpoint/
+
+# A separate submission package, out of scope for HYP-04/HYP-05 work and
+# never touched by it. Ignored only so an untracked folder does not read as
+# a dirty tree to _commit_sha's clean-tree check -- its contents are not
+# read, moved, or committed by anything here.
+AARE_Rebuilt_Submission/
