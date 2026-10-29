@@ -1,0 +1,40 @@
+{
+  "artifact": "GST_HYP01_S1_COHORT_PROTOCOL_REFERENCE_AMENDMENT_2026-08-29",
+  "schema": "GST_HYP01_DATED_AMENDMENT_v1",
+  "status": "DRAFT_UNSIGNED",
+  "append_only": true,
+  "supersedes_nothing_by_deletion": true,
+  "authored_at_utc": "2026-08-29",
+  "authored_before_any_eligible_event_or_outcome": true,
+  "eligible_events_at_authorship": 0,
+
+  "amends": "GST_HYP01_ANALYSIS_LOCK_v1.0.json",
+  "amends_sha256_lf": "85264e9786e42180547a22f320da7384b4a54d1e45c777e40b2f596a982b3805",
+  "amends_field": "/cohort_protocol",
+
+  "why": "S-1 of the adopted eligibility ladder is 'enrolled under the prospective cohort protocol'. The adopted base lock's /cohort_protocol field names 'Live Signal Engine/GST_PROSPECTIVE_COHORT_PROTOCOL_v1.0_DRAFT.md'. If cohort protocol v1.2 is adopted without amending that reference, S-1 would continue to point at a superseded draft and the ladder would test enrollment against the wrong document.",
+
+  "current_value_preserved_verbatim": "Live Signal Engine/GST_PROSPECTIVE_COHORT_PROTOCOL_v1.0_DRAFT.md",
+
+  "proposed_value": "Live Signal Engine/Governance_2026-08-29/GST_PROSPECTIVE_COHORT_PROTOCOL_v1.2_DRAFT.md",
+  "proposed_value_sha256_lf": "TO_BE_RECORDED_AT_SIGNATURE",
+  "proposed_value_note": "The SHA-256 is deliberately left unset. It must be computed from the exact bytes being adopted at the moment of signature, so that adoption binds specific content and not a moving path.",
+
+  "binding_condition": "This amendment and GST_PROSPECTIVE_COHORT_PROTOCOL_v1.2_DRAFT.md must be signed TOGETHER. Neither takes effect alone: adopting the protocol without this amendment leaves S-1 pointing at v1.0; adopting this amendment without the protocol points S-1 at an unadopted document.",
+
+  "what_this_amendment_does_not_do": [
+    "It changes no statistical rule; D1-D16 are untouched.",
+    "It changes no eligibility gate, threshold, formula or ordering. S-1's TEXT is unchanged; only the document it resolves to moves.",
+    "It does not close F5, authorize collection, or activate anything.",
+    "It does not edit the adopted lock in place. The current value is preserved verbatim above."
+  ],
+
+  "authorization": {
+    "status": "UNSIGNED",
+    "required_approvers": 2,
+    "approver_1_name": "", "approver_1_signature": "", "approver_1_timestamp": "",
+    "approver_2_name": "", "approver_2_signature": "", "approver_2_timestamp": "",
+    "effective_from": "",
+    "prospective_only": "Effective from the approval timestamp. Reclassifies no earlier event and creates no pre-approval deadline."
+  }
+}

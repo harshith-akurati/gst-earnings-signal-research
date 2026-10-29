@@ -1,0 +1,120 @@
+DRAFT — NOT SENT. No recipient named.
+
+Subject: Request for independent review — search-query construct validity for a
+         preregistered observational study (bounded, ~24 tickers)
+
+--------------------------------------------------------------------------------
+
+Hello,
+
+I am writing to ask whether you would be willing to act as the independent
+reviewer for one bounded methodological question in an observational finance
+study. The work is scoped, the deliverable is a single dated artifact, and the
+study cannot begin collecting data until it is done.
+
+WHAT THE STUDY DOES
+
+It tests whether abnormal pre-earnings Google-search attention is associated
+with a larger absolute overnight price move at an earnings announcement. It is
+an association study across 24 large US issuers, targeting 60 events. It makes
+no causal or trading claim. The statistical analysis is already fixed and
+internally authorized; no data has been collected and no result exists.
+
+THE QUESTION I NEED REVIEWED
+
+Our attention measure is built from a Google Trends series. The production code
+currently uses the BARE TICKER SYMBOL as the search query for every issuer --
+"AAPL", "DELL", "GME" and so on. There is no mapping layer; the ticker IS the
+query.
+
+An internal audit flagged this as unresolved and could not close it. It was an
+offline lexical screen with zero live Trends calls, and it explicitly forbids
+its own use to close the item. The concerns it raised:
+
+  * Does a bare ticker measure interest in the ISSUER, or investor-framed
+    interest only -- a much narrower thing than public attention?
+  * Lexical collisions. "DELL" is an ordinary word and a consumer brand.
+    "GME", "STZ" and "BKR" were flagged specifically.
+  * Coverage and sparsity: some queries may return series too thin to
+    standardize.
+  * Punctuation handling, e.g. BRK-B versus BRK.B.
+  * Whether a Google topic/entity behaves differently from free text.
+  * Google Trends' own revision behaviour, which is undocumented here.
+
+The audit marks empirical comparison MANDATORY for 11 tickers -- BKR, BRK-B,
+DELL, DVN, GME, GOOGL, GPN, NKE, STZ, SYK, UAL -- and recommended for the
+other 13.
+
+WHY IT MATTERS THAT SOMEONE OUTSIDE THE PROJECT DOES THIS
+
+A query change changes the signal. Whoever picks the query is defining the
+predictor. If the analysis side picks it, the study is choosing its own
+measurement, and the preregistration is worth much less.
+
+I should be direct about one constraint that shapes the whole task: the
+selection must be OUTCOME-BLIND. You would compare candidate queries on search
+data only, over a fixed historical window declared in advance. You may not
+compare them against prices, returns or earnings responses, and a query may
+never be preferred because it predicts a market move better. That would make
+our predictor a function of the outcome.
+
+WHAT THE WORK INVOLVES
+
+  * Predeclare selection criteria before pulling anything.
+  * For each ticker, compare the same six candidate query families over one
+    fixed development-only interval.
+  * Assess six dimensions: issuer specificity, lexical collision, coverage,
+    punctuation behaviour, topic availability, and repeat-pull revision
+    behaviour (the same query pulled on two separate days).
+  * Recommend one systematic rule for all 24, or justify each exception in
+    writing.
+  * Retain every candidate and result, including rejected ones.
+  * Produce one dated artifact stating whether the construct-validity item is
+    closed.
+
+Full protocol, the 24-row query inventory with our offline screen, and the
+governing documents are in the attached packet. Scope is bounded: it is a query
+mapping decision, not an audit of the study.
+
+WHAT I AM AND AM NOT ASKING
+
+I am asking you to decide what the queries should be, and to say so in writing.
+I am not asking you to endorse the study, its hypothesis or its analysis, and
+your review would not imply that.
+
+If the honest answer is that the bare ticker is inadequate and every query must
+change, that is a completely acceptable outcome -- it just has to be recorded
+before we collect anything.
+
+WHAT I CAN TELL YOU ABOUT INDEPENDENCE
+
+The earlier screen was produced by an AI assistant at my direction and states
+plainly that it is not a search-methodology authority. Neither that assistant
+nor I can serve as the qualified reviewer here. That is precisely why I am
+writing to someone outside the project.
+
+TIMING
+
+The study cannot open collection until this is resolved, so there is no data
+waiting on a deadline and no pressure to reach a particular conclusion. I would
+rather it be done properly than quickly.
+
+If you are willing, or if you would like to see the packet before deciding, I am
+happy to send it. If you would rather not, a pointer to someone better placed
+would also be very welcome.
+
+Thank you for considering it.
+
+  ____________________
+  [sender name]
+  [affiliation]
+  [contact]
+
+--------------------------------------------------------------------------------
+Attachments referenced (packet contents):
+  GST_HYP01_F5_CONSTRUCT_VALIDATION_PROTOCOL_2026-08-29_DRAFT.md
+  GST_SEARCH_CONSTRUCT_INVENTORY_v1.0.csv          (24 rows, one per ticker)
+  GST_SEARCH_CONSTRUCT_VALIDITY_AUDIT_v1.0.json    (the offline screen)
+  GST_SEARCH_CONSTRUCT_REVIEW_TEMPLATE_v1.0.md
+  GST_HYP01_E8_DEVELOPMENT_CONFIRMATORY_BOUNDARY_2026-08-29_DRAFT.md
+  PREREGISTRATION_GAP_AUDIT_v1.0.md                (row F5)
