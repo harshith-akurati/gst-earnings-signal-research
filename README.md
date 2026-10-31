@@ -2,7 +2,7 @@
 
 **A prospectively governed research system for measuring how unusual public attention propagates into prices, volume, volatility, and related securities around large-cap earnings.**
 
-Built by Harshith Akurati, Tyler He, and Benjamin Chen (researchers, St. Louis MO) with Saint Louis University professor Marcus Painter.
+Built by Harshith Akurati, Tyler He, Benjamin Chen, Saketh Tadakamalla, Mirudul Soupramanien, and Akshat Nandanavanam (researchers, St. Louis MO) with Saint Louis University professor Marcus Painter.
 
 ---
 
