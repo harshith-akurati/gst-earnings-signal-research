@@ -1,3 +1,17 @@
+# Search Attention and Earnings Research
+
+Can Google search activity around earnings announcements tell investors anything useful?
+
+I led a six-person student team investigating that question, developing research begun with Saint Louis University Professor Marcus Painter into an independent study. Our initial dataset covered 285 earnings announcements across 28 companies.
+
+Search spikes tracked larger stock movements, but adding those signals did not improve predictions on unseen data. We also found problems with earlier strategy tests, which led us to revise the methodology rather than present them as an investing advantage.
+
+The repository contains that research history and our continuing work on measuring attention and market responses. The documentation below describes later versions with different samples and eligibility rules. Those counts should not be confused with the original dataset.
+
+My work has included building the scanner, assembling and analyzing data, coordinating the team, and testing whether apparent findings hold up.
+
+## Technical documentation
+
 # GST Earnings Attention Observatory
 
 **A prospectively governed research system for measuring how unusual public attention propagates into prices, volume, volatility, and related securities around large-cap earnings.**
